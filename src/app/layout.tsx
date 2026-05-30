@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NebulaChat",
+  title: "NekoraChat",
   description: "Lightweight self-hosted AI chat client",
 };
 

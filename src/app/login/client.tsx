@@ -35,7 +35,7 @@ export default function LoginClient() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Lock className="h-6 w-6 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold">NebulaChat</h1>
+          <h1 className="text-2xl font-bold">NekoraChat</h1>
           <p className="text-sm text-muted-foreground">请输入访问密码</p>
         </div>
 

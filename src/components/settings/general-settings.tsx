@@ -120,7 +120,7 @@ export function GeneralSettings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `nebulachat-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `nekorachat-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -236,7 +236,7 @@ export function GeneralSettings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-1 text-sm text-muted-foreground">
-            <p>NebulaChat v0.1.0</p>
+            <p>NekoraChat v0.1.0</p>
             <p>轻量级自托管 AI 聊天客户端</p>
           </div>
         </CardContent>

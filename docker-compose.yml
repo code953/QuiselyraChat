@@ -1,7 +1,7 @@
 services:
-  nebulachat:
+  nekorachat:
     build: .
-    image: nebulachat:local
+    image: nekorachat:local
     ports:
       - "3000:3000"
     volumes:
@@ -11,7 +11,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-string}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
       DATABASE_URL: ${DATABASE_URL:-file:./data/app.db}
     restart: unless-stopped

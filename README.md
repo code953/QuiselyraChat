@@ -1,8 +1,8 @@
 该项目完全由AI编写，且作者因学业原因，不能经常维护，敬请谅解
 
-# NebulaChat
+# NekoraChat
 
-NebulaChat 是一个面向个人自托管的轻量 AI 聊天客户端。当前代码对应 M1 阶段，重点覆盖单用户访问、多服务商配置、模型列表拉取、模型能力测试、人格预设、会话管理、上下文窗口管理与 Docker 部署基础能力。
+NekoraChat 是一个面向个人自托管的轻量 AI 聊天客户端。当前代码对应 M1 阶段，重点覆盖单用户访问、多服务商配置、模型列表拉取、模型能力测试、人格预设、会话管理、上下文窗口管理与 Docker 部署基础能力。
 
 ## 功能状态
 
@@ -80,8 +80,8 @@ docker compose up -d --build
 也可以直接使用 Docker：
 
 ```bash
-docker build -t nebulachat:local .
-docker run -d --name nebulachat -p 3000:3000 -v ./data:/app/data --env-file .env nebulachat:local
+docker build -t nekorachat:local .
+docker run -d --name nekorachat -p 3000:3000 -v ./data:/app/data --env-file .env nekorachat:local
 ```
 
 ## 常用命令

@@ -14,7 +14,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   initAuth: () => {
     if (typeof window === "undefined") return;
-    const token = localStorage.getItem("nebulachat_token");
+    const token = localStorage.getItem("nekorachat_token") || localStorage.getItem("nebulachat_token");
     if (token) {
       set({ token, isAuthenticated: true });
     }
@@ -31,7 +31,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (!res.ok) return false;
 
       const { token } = await res.json();
-      localStorage.setItem("nebulachat_token", token);
+      localStorage.setItem("nekorachat_token", token);
+      localStorage.removeItem("nebulachat_token");
       set({ token, isAuthenticated: true });
       return true;
     } catch {
@@ -40,6 +41,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    localStorage.removeItem("nekorachat_token");
     localStorage.removeItem("nebulachat_token");
     set({ token: null, isAuthenticated: false });
   },

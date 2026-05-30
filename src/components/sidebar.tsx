@@ -287,7 +287,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         )}
       >
         <div className="flex items-center justify-between border-b p-3">
-          <h1 className="text-lg font-semibold">NebulaChat</h1>
+          <h1 className="text-lg font-semibold">NekoraChat</h1>
           <Button variant="ghost" size="icon" className="md:hidden" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
