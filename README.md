@@ -41,7 +41,7 @@ npm install
 npm run dev
 ```
 
-访问 http://localhost:3000，使用 `ACCESS_PASSWORD` 登录。数据库默认写入 `./data/app.db`。
+访问 http://localhost:3000 ，使用 `ACCESS_PASSWORD` 登录。数据库默认写入 `./data/app.db`。
 
 Windows 下 `npm run dev` 默认使用 Webpack，这是为了避开 Next.js 16 Turbopack 在 `.next/dev/node_modules/@libsql` 创建 junction 时可能出现的 `os error 145`。如果需要主动验证 Turbopack，可运行：
 
@@ -75,7 +75,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-访问 http://localhost:3000。容器会将 `./data` 挂载到 `/app/data`，用于保存 SQLite 数据库和后续上传文件。
+访问 http://localhost:3000 。容器会将 `./data` 挂载到 `/app/data`，用于保存 SQLite 数据库和后续上传文件。
 
 也可以直接使用 Docker：
 
