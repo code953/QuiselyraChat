@@ -64,7 +64,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchMessages: async (conversationId: string) => {
     try {
-      const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+      const res = await fetch(`/api/conversation-messages?conversationId=${encodeURIComponent(conversationId)}`, {
         headers: authHeaders(),
       });
       if (res.ok) {
@@ -77,8 +77,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             tokenUsage: (m.tokenUsage as ChatMessage["tokenUsage"]) || null,
           })),
         });
+      } else {
+        set({ messages: [] });
       }
-    } catch {}
+    } catch {
+      set({ messages: [] });
+    }
   },
 
   sendMessage: async (conversationId: string, content: string) => {

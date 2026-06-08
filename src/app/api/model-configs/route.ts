@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
-import { modelConfigs } from "@/db/schema";
-import { desc, sql } from "drizzle-orm";
+import { modelConfigs, models } from "@/db/schema";
+import { desc, eq, count } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { encrypt } from "@/lib/encryption";
 import { apiBadRequest, apiServerError } from "@/lib/api-helpers";
@@ -10,15 +10,17 @@ import { getTableColumns } from "drizzle-orm";
 
 export const GET = withAuth(async () => {
   try {
-    const list = await db
+    const rows = await db
       .select({
         ...getTableColumns(modelConfigs),
-        modelCount: sql<number>`(select count(*) from models where model_config_id = ${modelConfigs.id})`,
+        modelCount: count(models.id),
       })
       .from(modelConfigs)
+      .leftJoin(models, eq(models.modelConfigId, modelConfigs.id))
+      .groupBy(modelConfigs.id)
       .orderBy(desc(modelConfigs.createdAt));
 
-    return NextResponse.json(list);
+    return NextResponse.json(rows.map((row) => ({ ...row, modelCount: Number(row.modelCount) || 0 })));
   } catch {
     return apiServerError();
   }
@@ -49,7 +51,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       })
       .returning();
 
-    return NextResponse.json(config, { status: 201 });
+    return NextResponse.json({ ...config, modelCount: 0 }, { status: 201 });
   } catch {
     return apiServerError();
   }

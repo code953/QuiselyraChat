@@ -97,7 +97,7 @@ export function GeneralSettings() {
       const messagesMap: Record<string, unknown[]> = {};
       for (const conv of conversations) {
         try {
-          const msgRes = await fetch(`/api/conversations/${conv.id}/messages`, {
+          const msgRes = await fetch(`/api/conversation-messages?conversationId=${encodeURIComponent(conv.id)}`, {
             headers: authHeaders(),
           });
           if (msgRes.ok) {

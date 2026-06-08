@@ -42,7 +42,7 @@ export function ChatInput() {
     if (shouldGenerateTitle) {
       try {
         const token = localStorage.getItem("nekorachat_token") || localStorage.getItem("nebulachat_token");
-        const res = await fetch(`/api/conversations/${convId}/generate-title`, {
+        const res = await fetch(`/api/conversation-title?conversationId=${encodeURIComponent(convId)}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

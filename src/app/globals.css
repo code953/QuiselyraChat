@@ -122,3 +122,67 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-subst {
+    color: #c678dd;
+  }
+
+  .hljs-string,
+  .hljs-doctag,
+  .hljs-regexp {
+    color: #98c379;
+  }
+
+  .hljs-title,
+  .hljs-section,
+  .hljs-selector-id {
+    color: #61afef;
+  }
+
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-selector-class {
+    color: #e06c75;
+  }
+
+  .hljs-number,
+  .hljs-literal,
+  .hljs-type,
+  .hljs-params {
+    color: #d19a66;
+  }
+
+  .hljs-comment,
+  .hljs-quote {
+    color: #7f848e;
+  }
+
+  .hljs-built_in,
+  .hljs-builtin-name,
+  .hljs-attribute,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-link {
+    color: #56b6c2;
+  }
+
+  .hljs-meta,
+  .hljs-deletion {
+    color: #e06c75;
+  }
+
+  .hljs-addition {
+    color: #98c379;
+  }
+
+  .hljs-emphasis {
+    font-style: italic;
+  }
+
+  .hljs-strong {
+    font-weight: 600;
+  }
+}

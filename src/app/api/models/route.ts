@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
 import { models, modelConfigs } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { apiBadRequest, apiServerError } from "@/lib/api-helpers";
 
@@ -54,6 +54,38 @@ export const POST = withAuth(async (req: NextRequest) => {
       return apiBadRequest("modelConfigId and modelId are required");
     }
 
+    const normalizedModelId = String(modelId).trim();
+
+    if (!normalizedModelId) {
+      return apiBadRequest("modelId is required");
+    }
+
+    const [existing] = await db
+      .select()
+      .from(models)
+      .where(and(eq(models.modelConfigId, modelConfigId), eq(models.modelId, normalizedModelId)))
+      .limit(1);
+
+    if (existing) {
+      const updates: Record<string, unknown> = {
+        enabled: true,
+        source: existing.source === "manual" ? "manual" : source || existing.source,
+      };
+      if (displayName !== undefined) updates.displayName = displayName || null;
+      if (icon !== undefined) updates.icon = icon || null;
+      if (contextWindow !== undefined) updates.contextWindow = contextWindow || null;
+      if (pricing !== undefined) updates.pricing = pricing || null;
+      if (capabilities !== undefined) updates.capabilities = capabilities;
+
+      const [updated] = await db
+        .update(models)
+        .set(updates)
+        .where(eq(models.id, existing.id))
+        .returning();
+
+      return NextResponse.json(updated);
+    }
+
     const id = nanoid();
 
     const [model] = await db
@@ -61,7 +93,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       .values({
         id,
         modelConfigId,
-        modelId,
+        modelId: normalizedModelId,
         displayName: displayName || null,
         icon: icon || null,
         contextWindow: contextWindow || null,

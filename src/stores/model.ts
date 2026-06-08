@@ -44,7 +44,7 @@ interface ModelState {
   loading: boolean;
 
   fetchModels: (configId?: string) => Promise<void>;
-  addModel: (data: Partial<ModelWithProvider>) => Promise<void>;
+  addModel: (data: Partial<ModelWithProvider>) => Promise<ModelWithProvider | null>;
   updateModel: (id: string, data: Partial<ModelWithProvider>) => Promise<void>;
   deleteModel: (id: string) => Promise<void>;
   fetchRemoteModels: (configId: string) => Promise<unknown[]>;
@@ -78,9 +78,17 @@ export const useModelStore = create<ModelState>((set) => ({
       });
       if (res.ok) {
         const model = await res.json();
-        set((state) => ({ models: [...state.models, model] }));
+        set((state) => ({
+          models: state.models.some((item) => item.id === model.id)
+            ? state.models.map((item) => (item.id === model.id ? { ...item, ...model } : item))
+            : [...state.models, model],
+        }));
+        return model;
       }
-    } catch {}
+      return null;
+    } catch {
+      return null;
+    }
   },
 
   updateModel: async (id, data) => {
@@ -113,7 +121,7 @@ export const useModelStore = create<ModelState>((set) => ({
 
   fetchRemoteModels: async (configId: string) => {
     try {
-      const res = await fetch(`/api/model-configs/${configId}/fetch-models`, {
+      const res = await fetch(`/api/remote-models?configId=${encodeURIComponent(configId)}`, {
         method: "POST",
         headers: authHeaders(),
       });

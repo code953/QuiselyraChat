@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -23,6 +24,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { authHeaders } from "@/lib/api-helpers";
 import { Plus, Trash2, RefreshCw, Settings2, Server, Loader2 } from "lucide-react";
 
 const PROVIDER_PRESETS: Record<string, { label: string; baseUrl: string }> = {
@@ -49,11 +51,18 @@ const emptyForm: ConfigFormData = { provider: "", name: "", baseUrl: "", apiKey:
 
 type RemoteModel = { id: string; object?: string };
 
+type ModelSyncItem = {
+  id: string;
+  localId?: string;
+  remote: boolean;
+  local: boolean;
+};
+
 export function ProviderSettings() {
   const { configs, loading, fetchConfigs, createConfig, updateConfig, deleteConfig } =
     useModelConfigStore();
-  const incrementModelCount = useModelConfigStore((s) => s.incrementModelCount);
-  const { addModel, fetchRemoteModels } = useModelStore();
+  const setModelCount = useModelConfigStore((s) => s.setModelCount);
+  const { models, addModel, deleteModel, fetchModels, fetchRemoteModels } = useModelStore();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -64,9 +73,28 @@ export function ProviderSettings() {
   const [fetchDialogOpen, setFetchDialogOpen] = useState(false);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
   const [remoteModels, setRemoteModels] = useState<RemoteModel[]>([]);
-  const [selectedRemoteModels, setSelectedRemoteModels] = useState<Set<string>>(new Set());
+  const [syncModels, setSyncModels] = useState<ModelSyncItem[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [fetchLoading, setFetchLoading] = useState(false);
   const [addingModels, setAddingModels] = useState(false);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
+  useEffect(() => {
+    const counts = models.reduce<Record<string, number>>((acc, model) => {
+      acc[model.modelConfigId] = (acc[model.modelConfigId] || 0) + 1;
+      return acc;
+    }, {});
+
+    configs.forEach((config) => {
+      const count = counts[config.id] || 0;
+      if ((Number(config.modelCount) || 0) !== count) {
+        setModelCount(config.id, count);
+      }
+    });
+  }, [configs, models, setModelCount]);
 
   useEffect(() => {
     fetchConfigs();
@@ -141,22 +169,41 @@ export function ProviderSettings() {
       setFetchLoading(true);
       setFetchDialogOpen(true);
       setRemoteModels([]);
-      setSelectedRemoteModels(new Set());
+      setSyncModels([]);
+      setSelectedModelIds(new Set());
       try {
-        const models = (await fetchRemoteModels(configId)) as RemoteModel[];
-        if (models) {
-          setRemoteModels(models);
-          setSelectedRemoteModels(new Set(models.map((m) => m.id)));
-        }
+        const [remote, localRes] = await Promise.all([
+          fetchRemoteModels(configId) as Promise<RemoteModel[]>,
+          fetch(`/api/models?configId=${encodeURIComponent(configId)}`, { headers: authHeaders() }),
+        ]);
+        const nextRemote = remote || [];
+        const latestLocalModels = localRes.ok ? await localRes.json() : [];
+        const remoteIds = new Set(nextRemote.map((model) => model.id));
+        const localByModelId = new Map(latestLocalModels.map((model) => [model.modelId, model]));
+        const ids = Array.from(new Set([...nextRemote.map((model) => model.id), ...latestLocalModels.map((model) => model.modelId)])).sort();
+
+        setRemoteModels(nextRemote);
+        setSyncModels(ids.map((id) => {
+          const localModel = localByModelId.get(id);
+          return {
+            id,
+            localId: localModel?.id,
+            remote: remoteIds.has(id),
+            local: Boolean(localModel),
+          };
+        }));
+        setSelectedModelIds(new Set(latestLocalModels.map((model) => model.modelId)));
+
+        setModelCount(configId, latestLocalModels.length);
       } finally {
         setFetchLoading(false);
       }
     },
-    [fetchRemoteModels]
+    [fetchRemoteModels, setModelCount]
   );
 
-  const toggleRemoteModel = useCallback((modelId: string) => {
-    setSelectedRemoteModels((prev) => {
+  const toggleSyncModel = useCallback((modelId: string) => {
+    setSelectedModelIds((prev) => {
       const next = new Set(prev);
       if (next.has(modelId)) {
         next.delete(modelId);
@@ -167,26 +214,45 @@ export function ProviderSettings() {
     });
   }, []);
 
-  const handleAddSelectedModels = useCallback(async () => {
-    if (!fetchingId || selectedRemoteModels.size === 0) return;
+  const handleApplyModelSync = useCallback(async () => {
+    if (!fetchingId) return;
     setAddingModels(true);
     try {
-      let addedCount = 0;
-      for (const modelId of selectedRemoteModels) {
+      for (const model of syncModels) {
+        if (model.localId && !selectedModelIds.has(model.id)) {
+          await deleteModel(model.localId);
+        }
+      }
+
+      for (const model of syncModels) {
+        if (selectedModelIds.has(model.id) && !model.local) {
+          await addModel({
+            modelConfigId: fetchingId,
+            modelId: model.id,
+            source: model.remote ? "fetched" : "manual",
+          });
+        }
+      }
+
+      for (const modelId of Array.from(selectedModelIds).filter((id) => !syncModels.some((model) => model.id === id))) {
         await addModel({
           modelConfigId: fetchingId,
           modelId,
-          source: "fetched",
+          source: "manual",
         });
-        addedCount += 1;
       }
-      incrementModelCount(fetchingId, addedCount);
+
       setFetchDialogOpen(false);
+      await fetchModels();
       await fetchConfigs();
     } finally {
       setAddingModels(false);
     }
-  }, [fetchingId, selectedRemoteModels, addModel, incrementModelCount, fetchConfigs]);
+  }, [fetchingId, syncModels, selectedModelIds, deleteModel, addModel, fetchModels, fetchConfigs]);
+
+  const localSelectedCount = syncModels.filter((model) => model.local && selectedModelIds.has(model.id)).length;
+  const addCount = syncModels.filter((model) => !model.local && selectedModelIds.has(model.id)).length;
+  const deleteCount = syncModels.filter((model) => model.local && !selectedModelIds.has(model.id)).length;
 
   return (
     <div className="space-y-4">
@@ -270,6 +336,9 @@ export function ProviderSettings() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingId ? "编辑服务商" : "添加服务商"}</DialogTitle>
+            <DialogDescription>
+              配置模型服务商的 API 地址和密钥，密钥会加密保存在服务端。
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -331,36 +400,42 @@ export function ProviderSettings() {
       <Dialog open={fetchDialogOpen} onOpenChange={setFetchDialogOpen}>
         <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>拉取远程模型</DialogTitle>
+            <DialogTitle>同步模型列表</DialogTitle>
+            <DialogDescription>
+              勾选要保留在本地模型库中的模型；取消勾选已有模型会在应用时删除。
+            </DialogDescription>
           </DialogHeader>
           {fetchLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               <span className="ml-2 text-sm text-muted-foreground">正在获取模型列表...</span>
             </div>
-          ) : remoteModels.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">未获取到模型</p>
+          ) : syncModels.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">未获取到模型，且当前服务商没有已添加模型</p>
           ) : (
             <div className="max-h-[50vh] space-y-1 overflow-y-auto">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">
-                  共 {remoteModels.length} 个模型，已选 {selectedRemoteModels.size} 个
+                  远程 {remoteModels.length} 个，当前保留 {selectedModelIds.size} 个
                 </span>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    if (selectedRemoteModels.size === remoteModels.length) {
-                      setSelectedRemoteModels(new Set());
+                    if (selectedModelIds.size === syncModels.length) {
+                      setSelectedModelIds(new Set());
                     } else {
-                      setSelectedRemoteModels(new Set(remoteModels.map((m) => m.id)));
+                      setSelectedModelIds(new Set(syncModels.map((model) => model.id)));
                     }
                   }}
                 >
-                  {selectedRemoteModels.size === remoteModels.length ? "取消全选" : "全选"}
+                  {selectedModelIds.size === syncModels.length ? "取消全选" : "全选"}
                 </Button>
               </div>
-              {remoteModels.map((model) => (
+              <div className="mb-2 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+                已有保留 {localSelectedCount} 个，新增 {addCount} 个，删除 {deleteCount} 个
+              </div>
+              {syncModels.map((model) => (
                 <label
                   key={model.id}
                   className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
@@ -368,10 +443,13 @@ export function ProviderSettings() {
                   <input
                     type="checkbox"
                     className="rounded"
-                    checked={selectedRemoteModels.has(model.id)}
-                    onChange={() => toggleRemoteModel(model.id)}
+                    checked={selectedModelIds.has(model.id)}
+                    onChange={() => toggleSyncModel(model.id)}
                   />
-                  <span className="text-sm">{model.id}</span>
+                  <span className="flex-1 text-sm">{model.id}</span>
+                  {model.local && <Badge variant="secondary" className="text-xs">已添加</Badge>}
+                  {!model.remote && <Badge variant="outline" className="text-xs">本地</Badge>}
+                  {model.remote && !model.local && <Badge variant="outline" className="text-xs">可添加</Badge>}
                 </label>
               ))}
             </div>
@@ -381,11 +459,11 @@ export function ProviderSettings() {
               取消
             </Button>
             <Button
-              onClick={handleAddSelectedModels}
-              disabled={addingModels || selectedRemoteModels.size === 0}
+              onClick={handleApplyModelSync}
+              disabled={addingModels || syncModels.length === 0}
             >
               {addingModels && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              添加 {selectedRemoteModels.size} 个模型
+              应用更改
             </Button>
           </DialogFooter>
         </DialogContent>

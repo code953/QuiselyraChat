@@ -33,6 +33,7 @@ interface ModelConfigState {
   }>) => Promise<void>;
   deleteConfig: (id: string) => Promise<void>;
   incrementModelCount: (id: string, count?: number) => void;
+  setModelCount: (id: string, count: number) => void;
 }
 
 export const useModelConfigStore = create<ModelConfigState>((set) => ({
@@ -100,6 +101,14 @@ export const useModelConfigStore = create<ModelConfigState>((set) => ({
         config.id === id
           ? { ...config, modelCount: (Number(config.modelCount) || 0) + count }
           : config
+      ),
+    }));
+  },
+
+  setModelCount: (id, count) => {
+    set((state) => ({
+      configs: state.configs.map((config) =>
+        config.id === id ? { ...config, modelCount: count } : config
       ),
     }));
   },

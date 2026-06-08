@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
-import { conversations, messages } from "@/db/schema";
+import { conversations, messages, personas } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export const PATCH = withAuth(async (
@@ -17,7 +17,23 @@ export const PATCH = withAuth(async (
   if (body.pinned !== undefined) updates.pinned = body.pinned;
   if (body.archived !== undefined) updates.archived = body.archived;
   if (body.folderId !== undefined) updates.folderId = body.folderId;
-  if (body.personaId !== undefined) updates.personaId = body.personaId;
+  if (body.personaId !== undefined) {
+    if (body.personaId === null) {
+      updates.personaId = null;
+    } else {
+      const [persona] = await db
+        .select({ id: personas.id })
+        .from(personas)
+        .where(eq(personas.id, body.personaId))
+        .limit(1);
+
+      if (!persona) {
+        return NextResponse.json({ code: "NOT_FOUND", message: "Persona not found" }, { status: 404 });
+      }
+
+      updates.personaId = body.personaId;
+    }
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ code: "BAD_REQUEST", message: "No fields to update" }, { status: 400 });
@@ -35,7 +51,21 @@ export const PATCH = withAuth(async (
     return NextResponse.json({ code: "NOT_FOUND", message: "Conversation not found" }, { status: 404 });
   }
 
-  return NextResponse.json(updated);
+  if (updated.personaId) {
+    const [persona] = await db
+      .select({ name: personas.name, avatar: personas.avatar })
+      .from(personas)
+      .where(eq(personas.id, updated.personaId))
+      .limit(1);
+
+    return NextResponse.json({
+      ...updated,
+      personaName: persona?.name ?? null,
+      personaAvatar: persona?.avatar ?? null,
+    });
+  }
+
+  return NextResponse.json({ ...updated, personaName: null, personaAvatar: null });
 });
 
 export const DELETE = withAuth(async (

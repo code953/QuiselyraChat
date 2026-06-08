@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -14,6 +14,7 @@ import { useConversationStore } from "@/stores/conversation";
 export function PersonaSelector() {
   const { personas, fetchPersonas } = usePersonaStore();
   const { currentId, setPersona } = useConversationStore();
+  const [changing, setChanging] = useState(false);
   const currentConv = useConversationStore((s) =>
     s.conversations.find((c) => c.id === s.currentId)
   );
@@ -22,15 +23,21 @@ export function PersonaSelector() {
     fetchPersonas();
   }, [fetchPersonas]);
 
-  const handleChange = (value: string) => {
+  const handleChange = async (value: string) => {
     if (!currentId) return;
-    setPersona(currentId, value === "__none__" ? null : value);
+    setChanging(true);
+    try {
+      await setPersona(currentId, value === "__none__" ? null : value);
+    } finally {
+      setChanging(false);
+    }
   };
 
   return (
     <Select
       value={currentConv?.personaId ?? "__none__"}
       onValueChange={handleChange}
+      disabled={!currentId || changing}
     >
       <SelectTrigger size="sm" className="h-7 gap-1 border-none bg-transparent px-2 text-xs shadow-none">
         <SelectValue placeholder="无人格" />
