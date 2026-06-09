@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useAuthStore } from "@/stores/auth";
 import { authHeaders } from "@/lib/api-helpers";
 import { useModelStore } from "@/stores/model";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +16,6 @@ import {
 import { Loader2, Download, Moon, Sun } from "lucide-react";
 
 export function GeneralSettings() {
-  const { logout } = useAuthStore();
   const { models, fetchModels } = useModelStore();
 
   const [summaryModelId, setSummaryModelId] = useState<string>("__current__");
@@ -29,7 +27,7 @@ export function GeneralSettings() {
     if (typeof document !== "undefined") {
       return document.documentElement.classList.contains("dark") ? "dark" : "light";
     }
-    return "dark";
+    return "light";
   });
 
   const [exporting, setExporting] = useState(false);
@@ -214,18 +212,6 @@ export function GeneralSettings() {
               <Download className="mr-2 h-4 w-4" />
             )}
             导出所有数据
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => {
-              if (confirm("确定退出登录？")) {
-                logout();
-                window.location.href = "/login";
-              }
-            }}
-          >
-            退出登录
           </Button>
         </CardContent>
       </Card>

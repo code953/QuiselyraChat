@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { join } from "node:path";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
 import { models, modelConfigs } from "@/db/schema";
@@ -28,7 +28,7 @@ async function measure<T>(runner: () => Promise<T>): Promise<{ value?: T; latenc
 
 async function loadVisionTestImage(): Promise<{ dataUrl?: string; error?: string }> {
   try {
-    const imagePath = path.join(process.cwd(), "test.png");
+    const imagePath = join(process.cwd(), "test.png");
     const imageBuffer = await readFile(imagePath);
     if (imageBuffer.length === 0) {
       return { error: "测试图片 test.png 为空" };
