@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
 import { models, modelConfigs } from "@/db/schema";
@@ -21,6 +23,19 @@ async function measure<T>(runner: () => Promise<T>): Promise<{ value?: T; latenc
     return { value: await runner(), latencyMs: Date.now() - start };
   } catch (error) {
     return { latencyMs: Date.now() - start, error: error instanceof Error ? error.message : "Test failed" };
+  }
+}
+
+async function loadVisionTestImage(): Promise<{ dataUrl?: string; error?: string }> {
+  try {
+    const imagePath = path.join(process.cwd(), "test.png");
+    const imageBuffer = await readFile(imagePath);
+    if (imageBuffer.length === 0) {
+      return { error: "测试图片 test.png 为空" };
+    }
+    return { dataUrl: `data:image/png;base64,${imageBuffer.toString("base64")}` };
+  } catch (error) {
+    return { error: error instanceof Error ? `测试图片加载失败：${error.message}` : "测试图片加载失败" };
   }
 }
 
@@ -66,32 +81,36 @@ export const POST = withAuth(async (
             : undefined,
         };
 
-    const visionMeasured = await measure(() =>
-      client.chat.completions.create({
-        model: model.modelId,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "What word is shown in this image? Reply with only the word." },
+    const visionImage = await loadVisionTestImage();
+    const visionMeasured = visionImage.dataUrl
+      ? await measure(() =>
+          client.chat.completions.create({
+            model: model.modelId,
+            messages: [
               {
-                type: "image_url",
-                image_url: {
-                  url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iODAiPjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iODAiIGZpbGw9IndoaXRlIi8+PHRleHQgeD0iMTAwIiB5PSI0OCIgZm9udC1zaXplPSIzMiIgZm9udC1mYW1pbHk9IkFyaWFsIiBmaWxsPSJibGFjayIgdGV4dC1hbmNob3I9Im1pZGRsZSI+SEVMTE88L3RleHQ+PC9zdmc+",
-                },
+                role: "user",
+                content: [
+                  { type: "text", text: "What word is shown in this image? Reply with only the word." },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: visionImage.dataUrl,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        max_tokens: 20,
-      })
-    );
+            max_tokens: 20,
+          })
+        )
+      : { latencyMs: 0, error: visionImage.error || "测试图片加载失败" };
     const visionContent = visionMeasured.value?.choices[0]?.message?.content || "";
     const vision: TestResult = visionMeasured.error
       ? { success: false, error: visionMeasured.error, latencyMs: visionMeasured.latencyMs }
       : {
           success: /hello/i.test(visionContent),
           response: visionContent,
+          error: /hello/i.test(visionContent) ? undefined : "模型未准确识别出图片中的 Hello 字段",
           latencyMs: visionMeasured.latencyMs,
         };
 

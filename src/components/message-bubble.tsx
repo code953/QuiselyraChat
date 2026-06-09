@@ -4,19 +4,23 @@ import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
-import { Bot, User, Loader2, Copy, Check } from "lucide-react";
+import { Bot, User, Loader2, Copy, Check, RotateCcw } from "lucide-react";
 import { useModelStore } from "@/stores/model";
-import type { ChatMessage } from "@/stores/chat";
+import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { cn } from "@/lib/utils";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  conversationId?: string | null;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
   const [copied, setCopied] = useState(false);
+
+  const retryGeneration = useChatStore((s) => s.retryGeneration);
+  const isGenerating = useChatStore((s) => s.isStreaming);
 
   const models = useModelStore((s) => s.models);
   const model = message.modelId
@@ -29,6 +33,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleRetry = () => {
+    if (!conversationId || isGenerating) return;
+    retryGeneration(conversationId, message.id);
+  };
+
+  const canRetry = !isUser && !isStreaming && Boolean(conversationId);
 
   return (
     <div className={cn("group flex gap-3 px-4 py-3", isUser && "flex-row-reverse")}>
@@ -57,15 +68,32 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               ) : null}
             </>
           )}
-          {message.content && !isStreaming && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute -right-1 -top-1 h-6 w-6 opacity-0 group-hover:opacity-100"
-              onClick={handleCopy}
-            >
-              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            </Button>
+          {(message.content || canRetry) && !isStreaming && (
+            <div className="absolute -right-1 -top-1 flex gap-1 opacity-0 group-hover:opacity-100">
+              {canRetry && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 bg-background/80 shadow-sm"
+                  disabled={isGenerating}
+                  onClick={handleRetry}
+                  title="重新生成"
+                >
+                  <RotateCcw className={cn("h-3 w-3", isGenerating && "animate-spin")} />
+                </Button>
+              )}
+              {message.content && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 bg-background/80 shadow-sm"
+                  onClick={handleCopy}
+                  title="复制内容"
+                >
+                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                </Button>
+              )}
+            </div>
           )}
         </div>
         {message.status === "error" && (

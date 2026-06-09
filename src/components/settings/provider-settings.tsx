@@ -50,6 +50,15 @@ interface ConfigFormData {
 const emptyForm: ConfigFormData = { provider: "", name: "", baseUrl: "", apiKey: "" };
 
 type RemoteModel = { id: string; object?: string };
+type LocalModel = { id: string; modelId: string };
+
+function isRemoteModel(value: unknown): value is RemoteModel {
+  return typeof value === "object" && value !== null && typeof (value as RemoteModel).id === "string";
+}
+
+function isLocalModel(value: unknown): value is LocalModel {
+  return typeof value === "object" && value !== null && typeof (value as LocalModel).id === "string" && typeof (value as LocalModel).modelId === "string";
+}
 
 type ModelSyncItem = {
   id: string;
@@ -76,6 +85,7 @@ export function ProviderSettings() {
   const [syncModels, setSyncModels] = useState<ModelSyncItem[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [addingModels, setAddingModels] = useState(false);
 
   useEffect(() => {
@@ -171,18 +181,24 @@ export function ProviderSettings() {
       setRemoteModels([]);
       setSyncModels([]);
       setSelectedModelIds(new Set());
+      setFetchError(null);
       try {
         const [remote, localRes] = await Promise.all([
-          fetchRemoteModels(configId) as Promise<RemoteModel[]>,
+          fetchRemoteModels(configId),
           fetch(`/api/models?configId=${encodeURIComponent(configId)}`, { headers: authHeaders() }),
         ]);
-        const nextRemote = remote || [];
-        const latestLocalModels = localRes.ok ? await localRes.json() : [];
-        const remoteIds = new Set(nextRemote.map((model) => model.id));
-        const localByModelId = new Map(latestLocalModels.map((model) => [model.modelId, model]));
-        const ids = Array.from(new Set([...nextRemote.map((model) => model.id), ...latestLocalModels.map((model) => model.modelId)])).sort();
+        if (!localRes.ok) {
+          throw new Error("本地模型列表读取失败");
+        }
 
-        setRemoteModels(nextRemote);
+        const remoteData = Array.isArray(remote) ? remote.filter(isRemoteModel) : [];
+        const localData = await localRes.json().catch(() => []);
+        const latestLocalModels = Array.isArray(localData) ? localData.filter(isLocalModel) : [];
+        const remoteIds = new Set(remoteData.map((model) => model.id));
+        const localByModelId = new Map(latestLocalModels.map((model) => [model.modelId, model]));
+        const ids = Array.from(new Set([...remoteData.map((model) => model.id), ...latestLocalModels.map((model) => model.modelId)])).sort();
+
+        setRemoteModels(remoteData);
         setSyncModels(ids.map((id) => {
           const localModel = localByModelId.get(id);
           return {
@@ -195,6 +211,8 @@ export function ProviderSettings() {
         setSelectedModelIds(new Set(latestLocalModels.map((model) => model.modelId)));
 
         setModelCount(configId, latestLocalModels.length);
+      } catch (error) {
+        setFetchError(error instanceof Error ? error.message : "模型列表拉取失败");
       } finally {
         setFetchLoading(false);
       }
@@ -217,6 +235,7 @@ export function ProviderSettings() {
   const handleApplyModelSync = useCallback(async () => {
     if (!fetchingId) return;
     setAddingModels(true);
+    setFetchError(null);
     try {
       for (const model of syncModels) {
         if (model.localId && !selectedModelIds.has(model.id)) {
@@ -245,6 +264,8 @@ export function ProviderSettings() {
       setFetchDialogOpen(false);
       await fetchModels();
       await fetchConfigs();
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "模型同步失败");
     } finally {
       setAddingModels(false);
     }
@@ -421,6 +442,7 @@ export function ProviderSettings() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={fetchLoading || addingModels}
                   onClick={() => {
                     if (selectedModelIds.size === syncModels.length) {
                       setSelectedModelIds(new Set());
@@ -444,6 +466,7 @@ export function ProviderSettings() {
                     type="checkbox"
                     className="rounded"
                     checked={selectedModelIds.has(model.id)}
+                    disabled={addingModels}
                     onChange={() => toggleSyncModel(model.id)}
                   />
                   <span className="flex-1 text-sm">{model.id}</span>
@@ -454,13 +477,18 @@ export function ProviderSettings() {
               ))}
             </div>
           )}
+          {fetchError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {fetchError}
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFetchDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setFetchDialogOpen(false)} disabled={addingModels}>
               取消
             </Button>
             <Button
               onClick={handleApplyModelSync}
-              disabled={addingModels || syncModels.length === 0}
+              disabled={fetchLoading || addingModels || syncModels.length === 0}
             >
               {addingModels && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               应用更改

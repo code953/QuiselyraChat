@@ -3,10 +3,12 @@
 import { useEffect, useRef } from "react";
 import { MessageBubble } from "@/components/message-bubble";
 import { useChatStore } from "@/stores/chat";
+import { useConversationStore } from "@/stores/conversation";
 import { MessageSquare } from "lucide-react";
 
 export function MessageList() {
   const { messages, isStreaming } = useChatStore();
+  const currentId = useConversationStore((s) => s.currentId);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export function MessageList() {
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl py-4">
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble key={message.id} message={message} conversationId={currentId} />
         ))}
         <div ref={bottomRef} />
       </div>

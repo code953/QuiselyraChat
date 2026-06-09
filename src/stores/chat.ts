@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create, type StoreApi } from "zustand";
 import { authHeaders } from "@/lib/api-helpers";
 
 export interface ChatMessage {
@@ -51,9 +51,133 @@ interface ChatState {
 
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (conversationId: string, content: string) => Promise<void>;
+  retryGeneration: (conversationId: string, assistantMessageId: string) => Promise<void>;
   stopGeneration: () => void;
   clearMessages: () => void;
   setSelectedModelId: (modelId: string | null) => void;
+}
+
+type SetState = StoreApi<ChatState>["setState"];
+type GetState = StoreApi<ChatState>["getState"];
+
+async function streamAssistantMessage(
+  set: SetState,
+  get: GetState,
+  conversationId: string,
+  content: string,
+  assistantMessage: ChatMessage
+) {
+  const abortController = new AbortController();
+  set({ isStreaming: true, abortController });
+
+  try {
+    const { selectedModelId } = get();
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        conversationId,
+        content,
+        ...(selectedModelId ? { modelId: selectedModelId } : {}),
+      }),
+      signal: abortController.signal,
+    });
+
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.message || "生成失败，请稍后重试");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let activeAssistantId = assistantMessage.id;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        if (buffer.trim()) {
+          buffer += "\n\n";
+        } else {
+          break;
+        }
+      } else {
+        buffer += decoder.decode(value, { stream: true });
+      }
+
+      const parsed = parseStreamEvents(buffer);
+      buffer = parsed.remaining;
+
+      for (const data of parsed.events) {
+        const targetId = data.messageId || activeAssistantId;
+        const previousAssistantId = activeAssistantId;
+
+        if (data.messageId) {
+          activeAssistantId = data.messageId;
+        }
+
+        if (data.error) {
+          set((state) => ({
+            messages: state.messages.map((message) =>
+              message.id === activeAssistantId || message.id === assistantMessage.id
+                ? {
+                    ...message,
+                    id: activeAssistantId,
+                    status: "error" as const,
+                    content: message.content || data.error || "生成失败，请稍后重试",
+                  }
+                : message
+            ),
+          }));
+          break;
+        }
+
+        if (data.content) {
+          set((state) => ({
+            messages: state.messages.map((message) =>
+              message.id === previousAssistantId || message.id === activeAssistantId || message.id === assistantMessage.id
+                ? {
+                    ...message,
+                    id: targetId,
+                    content: message.content + data.content,
+                    modelId: data.modelId || message.modelId,
+                  }
+                : message
+            ),
+          }));
+        }
+
+        if (data.done) {
+          set((state) => ({
+            messages: state.messages.map((message) =>
+              message.id === targetId || message.id === assistantMessage.id
+                ? { ...message, id: targetId, status: "success" as const, tokenUsage: data.usage || null }
+                : message
+            ),
+          }));
+        }
+      }
+
+      if (done) break;
+    }
+  } catch (error: unknown) {
+    const aborted = error instanceof Error && error.name === "AbortError";
+    const errorMessage = error instanceof Error ? error.message : "生成失败，请稍后重试";
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === assistantMessage.id || message.status === "streaming"
+          ? {
+              ...message,
+              status: aborted ? "cancelled" as const : "error" as const,
+              content: aborted ? message.content : message.content || errorMessage,
+            }
+          : message
+      ),
+    }));
+  } finally {
+    set({ isStreaming: false, abortController: null });
+  }
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -70,11 +194,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (res.ok) {
         const data = await res.json();
         set({
-          messages: data.map((m: Record<string, unknown>) => ({
-            ...m,
-            createdAt: new Date(m.createdAt as string | number),
-            modelId: (m.modelId as string) || null,
-            tokenUsage: (m.tokenUsage as ChatMessage["tokenUsage"]) || null,
+          messages: data.map((message: Record<string, unknown>) => ({
+            ...message,
+            createdAt: new Date(message.createdAt as string | number),
+            modelId: (message.modelId as string) || null,
+            tokenUsage: (message.tokenUsage as ChatMessage["tokenUsage"]) || null,
           })),
         });
       } else {
@@ -86,6 +210,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (conversationId: string, content: string) => {
+    if (get().isStreaming) return;
+
     const userMessage: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -93,13 +219,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       status: "success",
       createdAt: new Date(),
     };
-
-    set((state) => ({
-      messages: [...state.messages, userMessage],
-    }));
-
-    const abortController = new AbortController();
-    set({ isStreaming: true, abortController });
 
     const assistantMessage: ChatMessage = {
       id: `temp-assistant-${Date.now()}`,
@@ -110,111 +229,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     set((state) => ({
-      messages: [...state.messages, assistantMessage],
+      messages: [...state.messages, userMessage, assistantMessage],
     }));
 
-    try {
-      const { selectedModelId } = get();
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          conversationId,
-          content,
-          ...(selectedModelId ? { modelId: selectedModelId } : {}),
-        }),
-        signal: abortController.signal,
-      });
+    await streamAssistantMessage(set, get, conversationId, content, assistantMessage);
+  },
 
-      if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message || "Failed to send message");
-      }
+  retryGeneration: async (conversationId: string, assistantMessageId: string) => {
+    if (get().isStreaming) return;
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let activeAssistantId = assistantMessage.id;
+    const currentMessages = get().messages;
+    const assistantIndex = currentMessages.findIndex((message) => message.id === assistantMessageId);
+    const userMessage = currentMessages
+      .slice(0, assistantIndex)
+      .reverse()
+      .find((message) => message.role === "user");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          buffer += decoder.decode();
-          if (buffer.trim()) {
-            buffer += "\n\n";
-          } else {
-            break;
-          }
-        } else {
-          buffer += decoder.decode(value, { stream: true });
-        }
-
-        const parsed = parseStreamEvents(buffer);
-        buffer = parsed.remaining;
-
-        for (const data of parsed.events) {
-          const targetId = data.messageId || activeAssistantId;
-          const previousAssistantId = activeAssistantId;
-
-          if (data.messageId) {
-            activeAssistantId = data.messageId;
-          }
-
-          if (data.error) {
-            set((state) => ({
-              messages: state.messages.map((m) =>
-                m.id === activeAssistantId || m.id === assistantMessage.id
-                  ? { ...m, id: activeAssistantId, status: "error" as const, content: m.content || data.error || "发送失败" }
-                  : m
-              ),
-            }));
-            break;
-          }
-
-          if (data.content) {
-            set((state) => ({
-              messages: state.messages.map((m) =>
-                m.id === previousAssistantId || m.id === activeAssistantId || m.id === assistantMessage.id
-                  ? { ...m, id: targetId, content: m.content + data.content, modelId: data.modelId || m.modelId }
-                  : m
-              ),
-            }));
-          }
-
-          if (data.done) {
-            set((state) => ({
-              messages: state.messages.map((m) =>
-                m.id === targetId || m.id === assistantMessage.id
-                  ? { ...m, id: targetId, status: "success" as const, tokenUsage: data.usage || null }
-                  : m
-              ),
-            }));
-          }
-        }
-
-        if (done) break;
-      }
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === "AbortError") {
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.status === "streaming"
-              ? { ...m, status: "cancelled" as const }
-              : m
-          ),
-        }));
-      } else {
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.status === "streaming"
-              ? { ...m, status: "error" as const }
-              : m
-          ),
-        }));
-      }
-    } finally {
-      set({ isStreaming: false, abortController: null });
+    if (assistantIndex < 0 || !userMessage) {
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message.id === assistantMessageId
+            ? { ...message, status: "error" as const, content: "未找到可重试的用户消息" }
+            : message
+        ),
+      }));
+      return;
     }
+
+    const retryMessage: ChatMessage = {
+      ...currentMessages[assistantIndex],
+      content: "",
+      status: "streaming",
+      tokenUsage: null,
+      createdAt: new Date(),
+    };
+
+    set((state) => ({
+      messages: state.messages.map((message) => (message.id === assistantMessageId ? retryMessage : message)),
+    }));
+
+    await streamAssistantMessage(set, get, conversationId, userMessage.content, retryMessage);
   },
 
   stopGeneration: () => {
