@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import type { Conversation } from "@/db/schema";
 import { authHeaders } from "@/lib/api-helpers";
 
@@ -16,7 +17,7 @@ interface ConversationState {
   createConversation: () => Promise<ConversationWithPersona | null>;
   deleteConversation: (id: string) => Promise<void>;
   setCurrentId: (id: string | null) => void;
-  updateConversationTitle: (id: string, title: string) => void;
+  updateConversationTitle: (id: string, title: string) => Promise<void>;
   pinConversation: (id: string, pinned: boolean) => Promise<void>;
   archiveConversation: (id: string, archived: boolean) => Promise<void>;
   moveToFolder: (id: string, folderId: string | null) => Promise<void>;
@@ -57,32 +58,50 @@ export const useConversationStore = create<ConversationState>((set) => ({
         return conversation;
       }
       return null;
-    } catch {
+    } catch (error) {
+      console.error("Failed to create conversation:", error);
+      toast.error("创建对话失败");
       return null;
     }
   },
 
   deleteConversation: async (id: string) => {
     try {
-      await fetch(`/api/conversations/${id}`, {
+      const res = await fetch(`/api/conversations/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
+      if (!res.ok) return;
       set((state) => ({
         conversations: state.conversations.filter((c) => c.id !== id),
         currentId: state.currentId === id ? null : state.currentId,
       }));
-    } catch {}
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+      toast.error("删除对话失败");
+    }
   },
 
   setCurrentId: (id: string | null) => set({ currentId: id }),
 
-  updateConversationTitle: (id: string, title: string) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, title } : c
-      ),
-    }));
+  updateConversationTitle: async (id: string, title: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ title }),
+      });
+      if (res.ok) {
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, title } : c
+          ),
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to update conversation title:", error);
+      toast.error("重命名失败");
+    }
   },
 
   pinConversation: async (id: string, pinned: boolean) => {
@@ -99,7 +118,10 @@ export const useConversationStore = create<ConversationState>((set) => ({
           ),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to pin conversation:", error);
+      toast.error("操作失败");
+    }
   },
 
   archiveConversation: async (id: string, archived: boolean) => {
@@ -116,7 +138,10 @@ export const useConversationStore = create<ConversationState>((set) => ({
           ),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to archive conversation:", error);
+      toast.error("操作失败");
+    }
   },
 
   moveToFolder: async (id: string, folderId: string | null) => {
@@ -133,7 +158,10 @@ export const useConversationStore = create<ConversationState>((set) => ({
           ),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to move conversation:", error);
+      toast.error("操作失败");
+    }
   },
 
   setPersona: async (id: string, personaId: string | null) => {
@@ -151,6 +179,9 @@ export const useConversationStore = create<ConversationState>((set) => ({
           ),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to set persona:", error);
+      toast.error("操作失败");
+    }
   },
 }));

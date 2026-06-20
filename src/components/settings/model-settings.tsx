@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Star, FlaskConical } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface ModelFormData {
   displayName: string;
@@ -65,6 +66,7 @@ export function ModelSettings() {
   const [bulkTesting, setBulkTesting] = useState(false);
   const [testModelTarget, setTestModelTarget] = useState<ModelWithProvider | null>(null);
   const [testResult, setTestResult] = useState<ModelFullTestResult | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchModels();
@@ -247,11 +249,7 @@ export function ModelSettings() {
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive"
-                      onClick={() => {
-                        if (confirm("确定删除该模型？")) {
-                          deleteModel(model.id);
-                        }
-                      }}
+                      onClick={() => setConfirmDeleteId(model.id)}
                     >
                       删除
                     </Button>
@@ -392,6 +390,19 @@ export function ModelSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}
+        title="删除模型"
+        description="确定要删除该模型吗？此操作不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={() => {
+          if (confirmDeleteId) deleteModel(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }

@@ -19,8 +19,8 @@ export function createLLMClient(config: ModelConfig): OpenAI {
   let apiKey: string;
   try {
     apiKey = decrypt(config.apiKeyEncrypted);
-  } catch {
-    apiKey = config.apiKeyEncrypted;
+  } catch (e) {
+    throw new Error(`Failed to decrypt API key for provider "${config.name}": ${e instanceof Error ? e.message : "unknown error"}`);
   }
   return new OpenAI({
     apiKey,

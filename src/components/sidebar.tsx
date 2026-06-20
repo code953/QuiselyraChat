@@ -39,6 +39,7 @@ import {
   FolderMinus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface SidebarProps {
   open: boolean;
@@ -75,8 +76,8 @@ function ConversationItem({
       )}
     >
       <MessageSquare className="h-4 w-4 shrink-0" />
-      <span className="flex-1 truncate">
-        {conv.pinned && "📌 "}
+      <span className="flex-1 truncate flex items-center gap-1">
+        {conv.pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
         {conv.title}
       </span>
       <DropdownMenu>
@@ -86,6 +87,7 @@ function ConversationItem({
             size="icon"
             className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
             onClick={(e) => e.stopPropagation()}
+            aria-label="更多操作"
           >
             <MoreHorizontal className="h-3 w-3" />
           </Button>
@@ -155,6 +157,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const [newFolderName, setNewFolderName] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConversations();
@@ -216,11 +219,17 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     setRenamingId(null);
   };
 
-  const handleDelete = async (id: string) => {
-    await deleteConversation(id);
-    if (currentId === id) {
+  const handleDelete = (id: string) => {
+    setConfirmDeleteId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    await deleteConversation(confirmDeleteId);
+    if (currentId === confirmDeleteId) {
       clearMessages();
     }
+    setConfirmDeleteId(null);
   };
 
   const handleCreateFolder = () => {
@@ -288,7 +297,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       >
         <div className="flex items-center justify-between border-b p-3">
           <h1 className="text-lg font-semibold">NekoraChat</h1>
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={onClose} aria-label="关闭侧边栏">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -360,6 +369,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                       size="icon"
                       className="h-5 w-5 opacity-0 group-hover:opacity-100"
                       onClick={() => deleteFolder(folder.id)}
+                      aria-label="删除文件夹"
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -416,6 +426,15 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </Button>
         </div>
       </aside>
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}
+        title="删除对话"
+        description="确定要删除这个对话吗？此操作不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={handleConfirmDelete}
+      />
     </>
   );
 }

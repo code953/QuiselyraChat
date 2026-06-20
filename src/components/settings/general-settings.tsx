@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTheme } from "next-themes";
 import { authHeaders } from "@/lib/api-helpers";
 import { useModelStore } from "@/stores/model";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,12 +24,7 @@ export function GeneralSettings() {
   const [savingSummaryModel, setSavingSummaryModel] = useState(false);
   const [summaryModelMsg, setSummaryModelMsg] = useState("");
 
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    if (typeof document !== "undefined") {
-      return document.documentElement.classList.contains("dark") ? "dark" : "light";
-    }
-    return "light";
-  });
+  const { theme, setTheme } = useTheme();
 
   const [exporting, setExporting] = useState(false);
 
@@ -69,15 +65,6 @@ export function GeneralSettings() {
       setSavingSummaryModel(false);
     }
   }, [summaryModelId]);
-
-  const handleThemeChange = useCallback((value: string) => {
-    const newTheme = value as "dark" | "light";
-    setTheme(newTheme);
-    if (typeof document !== "undefined") {
-      document.documentElement.classList.remove("dark", "light");
-      document.documentElement.classList.add(newTheme);
-    }
-  }, []);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -177,7 +164,7 @@ export function GeneralSettings() {
         <CardContent>
           <div className="flex items-center gap-3">
             <Label>主题</Label>
-            <Select value={theme} onValueChange={handleThemeChange}>
+            <Select value={theme} onValueChange={setTheme}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>

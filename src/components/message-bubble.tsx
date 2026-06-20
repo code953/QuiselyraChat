@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
-import { Bot, User, Loader2, Copy, Check, RotateCcw } from "lucide-react";
+import { Bot, User, Loader2, Copy, Check, RotateCcw, AlertCircle } from "lucide-react";
 import { useModelStore } from "@/stores/model";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { cn } from "@/lib/utils";
@@ -78,6 +78,7 @@ export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
                   disabled={isGenerating}
                   onClick={handleRetry}
                   title="重新生成"
+                  aria-label="重新生成"
                 >
                   <RotateCcw className={cn("h-3 w-3", isGenerating && "animate-spin")} />
                 </Button>
@@ -89,6 +90,7 @@ export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
                   className="h-6 w-6 bg-background/80 shadow-sm"
                   onClick={handleCopy}
                   title="复制内容"
+                  aria-label="复制内容"
                 >
                   {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                 </Button>
@@ -97,7 +99,10 @@ export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
           )}
         </div>
         {message.status === "error" && (
-          <span className="text-xs text-destructive">发送失败</span>
+          <div className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            发送失败
+          </div>
         )}
         {!isUser && !isStreaming && (modelName || message.tokenUsage) && (
           <div className="flex items-center gap-2 px-1">

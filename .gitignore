@@ -51,3 +51,5 @@ next-env.d.ts
 
 .vscode/*
 project.md
+AGENTS.md
+CLAUDE.md

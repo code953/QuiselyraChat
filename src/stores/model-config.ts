@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import { authHeaders } from "@/lib/api-helpers";
 
 export interface ModelConfigWithCount {
@@ -64,7 +65,10 @@ export const useModelConfigStore = create<ModelConfigState>((set) => ({
         const config = await res.json();
         set((state) => ({ configs: [...state.configs, config] }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to create config:", error);
+      toast.error("添加服务商失败");
+    }
   },
 
   updateConfig: async (id, data) => {
@@ -80,19 +84,26 @@ export const useModelConfigStore = create<ModelConfigState>((set) => ({
           configs: state.configs.map((c) => (c.id === id ? { ...c, ...updated } : c)),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to update config:", error);
+      toast.error("更新服务商失败");
+    }
   },
 
   deleteConfig: async (id) => {
     try {
-      await fetch(`/api/model-configs/${id}`, {
+      const res = await fetch(`/api/model-configs/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
+      if (!res.ok) return;
       set((state) => ({
         configs: state.configs.filter((c) => c.id !== id),
       }));
-    } catch {}
+    } catch (error) {
+      console.error("Failed to delete config:", error);
+      toast.error("删除服务商失败");
+    }
   },
 
   incrementModelCount: (id, count = 1) => {

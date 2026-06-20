@@ -24,6 +24,7 @@ function ChatPage() {
             size="icon"
             className="md:hidden"
             onClick={() => setSidebarOpen(true)}
+            aria-label="打开侧边栏"
           >
             <Menu className="h-5 w-5" />
           </Button>
@@ -31,7 +32,7 @@ function ChatPage() {
             <ModelSelector />
             <PersonaSelector />
           </div>
-          <Button variant="ghost" size="icon" asChild>
+          <Button variant="ghost" size="icon" asChild aria-label="设置">
             <Link href="/settings" prefetch={false}>
               <Settings className="h-4 w-4" />
             </Link>

@@ -14,7 +14,7 @@ function SettingsLayout() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <header className="flex items-center gap-3 border-b px-4 py-3">
-        <Button variant="ghost" size="icon" asChild>
+        <Button variant="ghost" size="icon" asChild aria-label="返回">
           <Link href="/">
             <ArrowLeft className="h-5 w-5" />
           </Link>

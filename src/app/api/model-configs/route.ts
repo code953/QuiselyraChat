@@ -5,7 +5,7 @@ import { modelConfigs, models } from "@/db/schema";
 import { desc, eq, count } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { encrypt } from "@/lib/encryption";
-import { apiBadRequest, apiServerError } from "@/lib/api-helpers";
+import { apiBadRequest, apiServerError, stripSensitiveFields } from "@/lib/api-helpers";
 import { getTableColumns } from "drizzle-orm";
 
 export const GET = withAuth(async () => {
@@ -20,7 +20,7 @@ export const GET = withAuth(async () => {
       .groupBy(modelConfigs.id)
       .orderBy(desc(modelConfigs.createdAt));
 
-    return NextResponse.json(rows.map((row) => ({ ...row, modelCount: Number(row.modelCount) || 0 })));
+    return NextResponse.json(rows.map((row) => stripSensitiveFields({ ...row, modelCount: Number(row.modelCount) || 0 })));
   } catch {
     return apiServerError();
   }
@@ -28,7 +28,12 @@ export const GET = withAuth(async () => {
 
 export const POST = withAuth(async (req: NextRequest) => {
   try {
-    const body = await req.json().catch(() => ({}));
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return apiBadRequest("Invalid JSON body");
+    }
     const { provider, name, baseUrl, apiKey, params, enabled } = body;
 
     if (!provider || !name || !baseUrl || !apiKey) {
@@ -51,7 +56,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       })
       .returning();
 
-    return NextResponse.json({ ...config, modelCount: 0 }, { status: 201 });
+    return NextResponse.json(stripSensitiveFields({ ...config, modelCount: 0 }), { status: 201 });
   } catch {
     return apiServerError();
   }

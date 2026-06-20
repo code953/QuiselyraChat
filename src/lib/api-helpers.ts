@@ -16,6 +16,12 @@ export function apiServerError(message = "Internal server error") {
   return apiError("INTERNAL_ERROR", message, 500);
 }
 
+export function stripSensitiveFields<T extends Record<string, unknown>>(obj: T): Omit<T, "apiKeyEncrypted"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { apiKeyEncrypted, ...rest } = obj;
+  return rest as Omit<T, "apiKeyEncrypted">;
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("nekorachat_token") || localStorage.getItem("nebulachat_token");

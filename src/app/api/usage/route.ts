@@ -8,7 +8,9 @@ import { apiServerError } from "@/lib/api-helpers";
 export const GET = withAuth(async (req: NextRequest) => {
   try {
     const daysParam = req.nextUrl.searchParams.get("days");
-    const days = daysParam ? parseInt(daysParam, 10) : 7;
+    let days = daysParam ? parseInt(daysParam, 10) : 7;
+    if (isNaN(days) || days < 1) days = 7;
+    if (days > 365) days = 365;
 
     const since = new Date();
     since.setDate(since.getDate() - days);

@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/stores/chat";
 import { useConversationStore } from "@/stores/conversation";
+import { authHeaders } from "@/lib/api-helpers";
 import { Send, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,13 +42,9 @@ export function ChatInput() {
 
     if (shouldGenerateTitle) {
       try {
-        const token = localStorage.getItem("nekorachat_token") || localStorage.getItem("nebulachat_token");
         const res = await fetch(`/api/conversation-title?conversationId=${encodeURIComponent(convId)}`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          headers: authHeaders(),
         });
         if (res.ok) {
           const { title } = await res.json();

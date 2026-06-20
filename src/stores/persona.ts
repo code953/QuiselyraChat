@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import { authHeaders } from "@/lib/api-helpers";
 
 export interface Persona {
@@ -52,7 +53,10 @@ export const usePersonaStore = create<PersonaState>((set) => ({
         const persona = await res.json();
         set((state) => ({ personas: [...state.personas, persona] }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to create persona:", error);
+      toast.error("创建人格失败");
+    }
   },
 
   updatePersona: async (id, data) => {
@@ -68,18 +72,25 @@ export const usePersonaStore = create<PersonaState>((set) => ({
           personas: state.personas.map((p) => (p.id === id ? { ...p, ...updated } : p)),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to update persona:", error);
+      toast.error("更新人格失败");
+    }
   },
 
   deletePersona: async (id) => {
     try {
-      await fetch(`/api/personas/${id}`, {
+      const res = await fetch(`/api/personas/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
+      if (!res.ok) return;
       set((state) => ({
         personas: state.personas.filter((p) => p.id !== id),
       }));
-    } catch {}
+    } catch (error) {
+      console.error("Failed to delete persona:", error);
+      toast.error("删除人格失败");
+    }
   },
 }));

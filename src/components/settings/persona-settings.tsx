@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface PersonaFormData {
   avatar: string;
@@ -41,6 +42,7 @@ export function PersonaSettings() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PersonaFormData>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPersonas();
@@ -92,12 +94,10 @@ export function PersonaSettings() {
   }, [form, editingId, createPersona, updatePersona]);
 
   const handleDelete = useCallback(
-    async (id: string) => {
-      if (confirm("确定删除该人格？")) {
-        await deletePersona(id);
-      }
+    (id: string) => {
+      setConfirmDeleteId(id);
     },
-    [deletePersona]
+    []
   );
 
   return (
@@ -140,6 +140,7 @@ export function PersonaSettings() {
                     size="icon"
                     className="h-7 w-7"
                     onClick={() => openEditDialog(persona)}
+                    aria-label="编辑人格"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
@@ -149,6 +150,7 @@ export function PersonaSettings() {
                       size="icon"
                       className="h-7 w-7 text-destructive hover:text-destructive"
                       onClick={() => handleDelete(persona.id)}
+                      aria-label="删除人格"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -164,7 +166,13 @@ export function PersonaSettings() {
       </div>
 
       {!loading && personas.length === 0 && (
-        <p className="py-12 text-center text-sm text-muted-foreground">暂无人格配置</p>
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+          <p className="text-sm">暂无人格配置</p>
+          <Button size="sm" variant="outline" onClick={openCreateDialog} className="mt-2">
+            <Plus className="mr-1 h-4 w-4" />
+            新建人格
+          </Button>
+        </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -232,6 +240,19 @@ export function PersonaSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}
+        title="删除人格"
+        description="确定要删除该人格配置吗？此操作不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={() => {
+          if (confirmDeleteId) deletePersona(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }

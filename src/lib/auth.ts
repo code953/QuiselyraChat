@@ -1,7 +1,14 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET environment variable is required in production");
+  }
+  console.warn("WARNING: JWT_SECRET is not set, using insecure default. Set JWT_SECRET for production.");
+}
+const jwtSecret = JWT_SECRET || "default-secret-change-me-dev-only";
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || "";
 
 export async function verifyPassword(password: string): Promise<boolean> {
@@ -13,12 +20,12 @@ export async function verifyPassword(password: string): Promise<boolean> {
 }
 
 export function signToken(): string {
-  return jwt.sign({ authenticated: true }, JWT_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ authenticated: true }, jwtSecret, { expiresIn: "30d" });
 }
 
 export function verifyToken(token: string): boolean {
   try {
-    jwt.verify(token, JWT_SECRET);
+    jwt.verify(token, jwtSecret);
     return true;
   } catch {
     return false;

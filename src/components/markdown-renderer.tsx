@@ -32,12 +32,12 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="group/code relative my-3 overflow-hidden rounded-lg border bg-zinc-950 text-zinc-50 dark:bg-zinc-950">
+    <div className="group/code relative my-3 overflow-hidden rounded-lg border bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="absolute right-2 top-2 h-7 px-2 text-zinc-300 opacity-0 hover:bg-zinc-800 hover:text-zinc-50 group-hover/code:opacity-100"
+        className="absolute right-2 top-2 h-7 px-2 text-zinc-500 opacity-0 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 group-hover/code:opacity-100"
         onClick={handleCopy}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

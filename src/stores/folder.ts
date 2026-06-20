@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import { authHeaders } from "@/lib/api-helpers";
 
 export interface Folder {
@@ -45,7 +46,10 @@ export const useFolderStore = create<FolderState>((set) => ({
         const folder = await res.json();
         set((state) => ({ folders: [...state.folders, folder] }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to create folder:", error);
+      toast.error("创建文件夹失败");
+    }
   },
 
   updateFolder: async (id, data) => {
@@ -61,18 +65,25 @@ export const useFolderStore = create<FolderState>((set) => ({
           folders: state.folders.map((f) => (f.id === id ? { ...f, ...updated } : f)),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to update folder:", error);
+      toast.error("更新文件夹失败");
+    }
   },
 
   deleteFolder: async (id) => {
     try {
-      await fetch(`/api/folders/${id}`, {
+      const res = await fetch(`/api/folders/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
+      if (!res.ok) return;
       set((state) => ({
         folders: state.folders.filter((f) => f.id !== id),
       }));
-    } catch {}
+    } catch (error) {
+      console.error("Failed to delete folder:", error);
+      toast.error("删除文件夹失败");
+    }
   },
 }));

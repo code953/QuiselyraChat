@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import { authHeaders } from "@/lib/api-helpers";
 
 export interface ModelWithProvider {
@@ -86,7 +87,9 @@ export const useModelStore = create<ModelState>((set) => ({
         return model;
       }
       return null;
-    } catch {
+    } catch (error) {
+      console.error("Failed to add model:", error);
+      toast.error("添加模型失败");
       return null;
     }
   },
@@ -104,19 +107,26 @@ export const useModelStore = create<ModelState>((set) => ({
           models: state.models.map((m) => (m.id === id ? { ...m, ...updated } : m)),
         }));
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to update model:", error);
+      toast.error("更新模型失败");
+    }
   },
 
   deleteModel: async (id) => {
     try {
-      await fetch(`/api/models/${id}`, {
+      const res = await fetch(`/api/models/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
+      if (!res.ok) return;
       set((state) => ({
         models: state.models.filter((m) => m.id !== id),
       }));
-    } catch {}
+    } catch (error) {
+      console.error("Failed to delete model:", error);
+      toast.error("删除模型失败");
+    }
   },
 
   fetchRemoteModels: async (configId: string) => {
@@ -129,7 +139,9 @@ export const useModelStore = create<ModelState>((set) => ({
         return await res.json();
       }
       return [];
-    } catch {
+    } catch (error) {
+      console.error("Failed to fetch remote models:", error);
+      toast.error("拉取远程模型失败");
       return [];
     }
   },
@@ -156,7 +168,9 @@ export const useModelStore = create<ModelState>((set) => ({
         return result;
       }
       return null;
-    } catch {
+    } catch (error) {
+      console.error("Failed to test model:", error);
+      toast.error("模型测试失败");
       return null;
     }
   },

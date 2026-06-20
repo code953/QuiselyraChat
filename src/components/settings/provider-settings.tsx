@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { authHeaders } from "@/lib/api-helpers";
 import { Plus, Trash2, RefreshCw, Settings2, Server, Loader2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 const PROVIDER_PRESETS: Record<string, { label: string; baseUrl: string }> = {
   openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1" },
@@ -87,6 +88,7 @@ export function ProviderSettings() {
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [addingModels, setAddingModels] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchModels();
@@ -331,11 +333,7 @@ export function ProviderSettings() {
                   size="sm"
                   className="text-destructive hover:text-destructive"
                   disabled={deletingId === config.id}
-                  onClick={() => {
-                    if (confirm("确定删除该服务商配置？关联的模型也会被删除。")) {
-                      handleDelete(config.id);
-                    }
-                  }}
+                  onClick={() => setConfirmDeleteId(config.id)}
                 >
                   <Trash2 className="mr-1 h-3.5 w-3.5" />
                   删除
@@ -350,6 +348,10 @@ export function ProviderSettings() {
         <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
           <Server className="h-8 w-8" />
           <p className="text-sm">暂无服务商配置</p>
+          <Button size="sm" variant="outline" onClick={openCreateDialog} className="mt-2">
+            <Plus className="mr-1 h-4 w-4" />
+            添加服务商
+          </Button>
         </div>
       )}
 
@@ -496,6 +498,19 @@ export function ProviderSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}
+        title="删除服务商"
+        description="确定要删除该服务商配置吗？关联的模型也会被一并删除，此操作不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={() => {
+          if (confirmDeleteId) handleDelete(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }

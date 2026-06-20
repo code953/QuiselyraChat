@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { modelConfigs } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { encrypt } from "@/lib/encryption";
-import { apiNotFound, apiServerError } from "@/lib/api-helpers";
+import { apiBadRequest, apiNotFound, apiServerError, stripSensitiveFields } from "@/lib/api-helpers";
 
 export const GET = withAuth(async (
   _req: NextRequest,
@@ -22,7 +22,7 @@ export const GET = withAuth(async (
       return apiNotFound("Model config not found");
     }
 
-    return NextResponse.json(config);
+    return NextResponse.json(stripSensitiveFields(config));
   } catch {
     return apiServerError();
   }
@@ -34,7 +34,12 @@ export const PUT = withAuth(async (
 ) => {
   try {
     const { id } = await context.params;
-    const body = await req.json().catch(() => ({}));
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return apiBadRequest("Invalid JSON body");
+    }
 
     const updates: Record<string, unknown> = {};
     if (body.provider !== undefined) updates.provider = body.provider;
@@ -54,7 +59,7 @@ export const PUT = withAuth(async (
       return apiNotFound("Model config not found");
     }
 
-    return NextResponse.json(updated);
+    return NextResponse.json(stripSensitiveFields(updated));
   } catch {
     return apiServerError();
   }
