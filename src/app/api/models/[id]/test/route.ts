@@ -82,7 +82,8 @@ export const POST = withAuth(async (
         };
 
     const visionImage = await loadVisionTestImage();
-    const visionMeasured = visionImage.dataUrl
+    const dataUrl = visionImage.dataUrl;
+    const visionMeasured = dataUrl
       ? await measure(() =>
           client.chat.completions.create({
             model: model.modelId,
@@ -93,9 +94,7 @@ export const POST = withAuth(async (
                   { type: "text", text: "What word is shown in this image? Reply with only the word." },
                   {
                     type: "image_url",
-                    image_url: {
-                      url: visionImage.dataUrl,
-                    },
+                    image_url: { url: dataUrl },
                   },
                 ],
               },
