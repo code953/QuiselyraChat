@@ -45,7 +45,7 @@ export const PUT = withAuth(async (
     if (body.provider !== undefined) updates.provider = body.provider;
     if (body.name !== undefined) updates.name = body.name;
     if (body.baseUrl !== undefined) updates.baseUrl = body.baseUrl;
-    if (body.apiKey !== undefined) updates.apiKeyEncrypted = encrypt(body.apiKey);
+    if (body.apiKey !== undefined) updates.apiKeyEncrypted = await encrypt(body.apiKey);
     if (body.params !== undefined) updates.params = body.params;
     if (body.enabled !== undefined) updates.enabled = body.enabled;
 

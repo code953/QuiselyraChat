@@ -23,6 +23,13 @@ export async function runMigrations() {
     }
   }
   await seedBuiltinPersonas();
+  await ensureStartupSecrets();
+}
+
+async function ensureStartupSecrets() {
+  // 首次启动时生成并持久化 JWT 密钥、加密密钥与初始访问密码（初始密码会打印到日志）。
+  const { ensureSecrets } = await import("@/lib/secrets");
+  await ensureSecrets();
 }
 
 async function syncMigrationJournal() {

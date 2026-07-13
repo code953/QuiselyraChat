@@ -41,7 +41,7 @@ export const POST = withAuth(async (req: NextRequest) => {
     }
 
     const id = nanoid();
-    const apiKeyEncrypted = encrypt(apiKey);
+    const apiKeyEncrypted = await encrypt(apiKey);
 
     const [config] = await db
       .insert(modelConfigs)

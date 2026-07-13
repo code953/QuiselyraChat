@@ -22,16 +22,10 @@ NekoraChat 是一个面向个人自托管的轻量 AI 聊天客户端。当前�
 
 ## 本地开发
 
-复制环境变量模板并填写密钥：
+复制环境变量模板（可选，仅用于自定义数据库地址）：
 
 ```bash
 cp .env.example .env.local
-```
-
-生成 64 位十六进制加密密钥：
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 安装依赖并启动开发服务：
@@ -41,7 +35,17 @@ npm install
 npm run dev
 ```
 
-访问 http://localhost:3000 ，使用 `ACCESS_PASSWORD` 登录。数据库默认写入 `./data/app.db`。
+首次启动时，系统会自动生成访问密码、JWT 密钥与加密密钥，并持久化到数据库。**初始访问密码会打印在启动日志中**，形如：
+
+```
+========================================================
+  NekoraChat 首次启动：已自动生成初始访问密码
+  初始密码: Ab3x9Kd2Qz7...
+  请妥善保存。登录后可在「设置 - 通用」中修改密码。
+========================================================
+```
+
+访问 http://localhost:3000 ，使用日志中打印的初始密码登录。数据库默认写入 `./data/app.db`。
 
 Windows 下 `npm run dev` 默认使用 Webpack，这是为了避开 Next.js 16 Turbopack 在 `.next/dev/node_modules/@libsql` 创建 junction 时可能出现的 `os error 145`。如果需要主动验证 Turbopack，可运行：
 
@@ -53,21 +57,11 @@ npm run dev:turbo
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `ACCESS_PASSWORD` | 是 | 站点访问密码 |
-| `JWT_SECRET` | 是 | JWT 签名密钥，建议使用 32 字符以上随机字符串 |
-| `ENCRYPTION_KEY` | 是 | API Key 加密主密钥，必须是 32 字节/64 位十六进制字符串 |
 | `DATABASE_URL` | 否 | SQLite/libSQL 地址，默认 `file:./data/app.db` |
-| `OPENAI_API_KEY` | 否 | 可选标题生成接口使用的 OpenAI 兼容 Key，留空则使用首条用户消息生成标题 |
-| `OPENAI_BASE_URL` | 否 | 可选标题生成接口 Base URL，留空使用 SDK 默认值 |
-| `OPENAI_MODEL` | 否 | 可选标题生成模型，留空时不调用标题模型 |
+
+> 访问密码、JWT 签名密钥（`JWT_SECRET`）和 API Key 加密主密钥（`ENCRYPTION_KEY`）不再通过环境变量配置，改为首次启动时自动生成并持久化到数据库的 `settings` 表，重启后保持不变。
 
 ## Docker 部署
-
-先准备 `.env` 文件：
-
-```bash
-cp .env.example .env
-```
 
 构建并启动：
 
@@ -75,13 +69,13 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-访问 http://localhost:3000 。容器会将 `./data` 挂载到 `/app/data`，用于保存 SQLite 数据库和后续上传文件。
+首次启动后，用 `docker compose logs` 查看容器日志，其中会打印自动生成的初始访问密码。访问 http://localhost:3000 使用该密码登录。容器会将 `./data` 挂载到 `/app/data`，用于保存 SQLite 数据库（含自动生成的密钥）和后续上传文件。
 
 也可以直接使用 Docker：
 
 ```bash
 docker build -t nekorachat:local .
-docker run -d --name nekorachat -p 3000:3000 -v ./data:/app/data --env-file .env nekorachat:local
+docker run -d --name nekorachat -p 3000:3000 -v ./data:/app/data nekorachat:local
 ```
 
 ## 常用命令
@@ -96,8 +90,9 @@ npm run build
 
 ## 部署注意事项
 
-- 生产环境必须替换 `ACCESS_PASSWORD`、`JWT_SECRET` 和 `ENCRYPTION_KEY`，不要使用示例值。
-- `ENCRYPTION_KEY` 丢失后，已保存的服务商 API Key 将无法解密，部署前应做好备份。
+- 访问密码、`JWT_SECRET`、`ENCRYPTION_KEY` 均由系统首次启动时自动生成并保存在数据库中，无需手动配置。初始密码在启动日志中打印一次，请及时保存。
+- 密钥保存在 `./data` 下的数据库里。**该目录（尤其是加密密钥）丢失后，已保存的服务商 API Key 将无法解密**，已签发的登录 token 也会失效，务必做好备份。
 - 建议为站点配置 HTTPS 反向代理，例如 Caddy、Nginx 或 Cloudflare Access。
 - 建议定期备份 `./data` 目录，数据库和运行数据默认都保存在该目录下。
-- 模型服务商 API Key 在设置页添加，`.env` 不再内置默认 OpenAI 提供商；可选 `OPENAI_*` 变量仅用于自动生成会话标题。
+- 模型服务商 API Key 在设置页添加。
+

@@ -15,10 +15,10 @@ export const PROVIDER_PRESETS: Record<string, { name: string; baseUrl: string; m
   custom: { name: "自定义", baseUrl: "" },
 };
 
-export function createLLMClient(config: ModelConfig): OpenAI {
+export async function createLLMClient(config: ModelConfig): Promise<OpenAI> {
   let apiKey: string;
   try {
-    apiKey = decrypt(config.apiKeyEncrypted);
+    apiKey = await decrypt(config.apiKeyEncrypted);
   } catch (e) {
     throw new Error(`Failed to decrypt API key for provider "${config.name}": ${e instanceof Error ? e.message : "unknown error"}`);
   }
@@ -29,7 +29,7 @@ export function createLLMClient(config: ModelConfig): OpenAI {
 }
 
 export async function fetchRemoteModels(config: ModelConfig): Promise<Array<{ id: string; created?: number }>> {
-  const client = createLLMClient(config);
+  const client = await createLLMClient(config);
   try {
     const list = await client.models.list();
     const result: Array<{ id: string; created?: number }> = [];

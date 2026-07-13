@@ -11,7 +11,7 @@ export function withAuth(
     }
 
     const token = authHeader.slice(7);
-    if (!verifyToken(token)) {
+    if (!(await verifyToken(token))) {
       return NextResponse.json({ code: "UNAUTHORIZED", message: "Invalid token" }, { status: 401 });
     }
 

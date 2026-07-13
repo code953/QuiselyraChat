@@ -48,7 +48,7 @@ export const POST = withAuth(async (
     return NextResponse.json({ title: "新对话" });
   }
 
-  const client = createLLMClient(config);
+  const client = await createLLMClient(config);
   const chatContent = history
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");

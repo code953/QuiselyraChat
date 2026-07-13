@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import { authHeaders } from "@/lib/api-helpers";
 import { useModelStore } from "@/stores/model";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -14,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Download, Moon, Sun } from "lucide-react";
+import { Loader2, Download, Upload, Moon, Sun } from "lucide-react";
 
 export function GeneralSettings() {
   const { models, fetchModels } = useModelStore();
@@ -27,6 +29,14 @@ export function GeneralSettings() {
   const { theme, setTheme } = useTheme();
 
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 修改密码
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
     fetchModels();
@@ -65,6 +75,42 @@ export function GeneralSettings() {
       setSavingSummaryModel(false);
     }
   }, [summaryModelId]);
+
+  const handleChangePassword = useCallback(async () => {
+    if (!currentPassword) {
+      toast.error("请输入当前密码");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("新密码至少 6 个字符");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("两次输入的新密码不一致");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch("/api/settings/password", {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (res.ok) {
+        toast.success("密码已修改，下次登录请使用新密码");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data?.message || "修改密码失败");
+      }
+    } catch {
+      toast.error("修改密码失败");
+    } finally {
+      setSavingPassword(false);
+    }
+  }, [currentPassword, newPassword, confirmPassword]);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -113,6 +159,56 @@ export function GeneralSettings() {
     }
   }, []);
 
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      setImporting(true);
+      try {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(await file.text());
+        } catch {
+          toast.error("导入失败：文件不是合法的 JSON");
+          return;
+        }
+
+        const res = await fetch("/api/data/import", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          toast.error(data?.message || "导入失败");
+          return;
+        }
+
+        const parts = [`新增 ${data.added} 项`];
+        if (data.renamed > 0) parts.push(`冲突重命名 ${data.renamed} 项`);
+        if (data.skipped > 0) parts.push(`跳过 ${data.skipped} 项`);
+        toast.success(`导入完成：${parts.join("，")}（含 ${data.messages} 条消息）`);
+
+        // 刷新受影响的本地数据
+        fetchModels();
+      } catch {
+        toast.error("导入失败");
+      } finally {
+        setImporting(false);
+      }
+    },
+    [fetchModels]
+  );
+
+  const onFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      // 允许重复选择同一文件
+      e.target.value = "";
+      if (file) handleImportFile(file);
+    },
+    [handleImportFile]
+  );
+
   return (
     <div className="space-y-4">
       <h2 className="text-base font-medium">通用设置</h2>
@@ -123,8 +219,47 @@ export function GeneralSettings() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            访问密码只能通过服务端环境变量 ACCESS_PASSWORD 修改。修改后请重启服务，并使用新密码重新登录。
+            访问密码由系统首次启动时自动生成（初始密码见启动日志）。你可以在此修改为自定义密码，修改后请使用新密码重新登录。
           </p>
+          <div className="grid gap-3 sm:max-w-sm">
+            <div className="space-y-1.5">
+              <Label htmlFor="current-password">当前密码</Label>
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="输入当前密码"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password">新密码</Label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="至少 6 个字符"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-password">确认新密码</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="再次输入新密码"
+              />
+            </div>
+          </div>
+          <Button size="sm" onClick={handleChangePassword} disabled={savingPassword}>
+            {savingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            修改密码
+          </Button>
         </CardContent>
       </Card>
 
@@ -192,14 +327,40 @@ export function GeneralSettings() {
           <CardTitle className="text-sm">数据管理</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
-            {exporting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
-            导出所有数据
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
+              {exporting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              导出所有数据
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+            >
+              {importing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              导入数据
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={onFileChange}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            导入此前导出的 JSON 文件。按 id 比对：不冲突则直接新增；冲突则保留原有数据，导入的记录会加「{"[导入] "}」前缀作为新记录一并保留，不会覆盖已有数据。
+            模型需其所属服务商仍存在才能导入，否则会被跳过。
+          </p>
         </CardContent>
       </Card>
 

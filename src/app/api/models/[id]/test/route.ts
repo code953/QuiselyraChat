@@ -56,7 +56,7 @@ export const POST = withAuth(async (
       return apiNotFound("Model config not found");
     }
 
-    const client = createLLMClient(config);
+    const client = await createLLMClient(config);
 
     const chatMeasured = await measure(() =>
       client.chat.completions.create({

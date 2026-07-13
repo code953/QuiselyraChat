@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const token = signToken();
+    const token = await signToken();
     return NextResponse.json({ token });
   } catch {
     return NextResponse.json(

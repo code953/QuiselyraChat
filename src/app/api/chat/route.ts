@@ -82,7 +82,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       return apiBadRequest("Model config not found");
     }
     config = foundConfig;
-    client = createLLMClient(foundConfig);
+    client = await createLLMClient(foundConfig);
     modelName = foundModel.modelId;
   } else {
     return apiBadRequest("Please select a model from Settings before chatting");

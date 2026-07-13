@@ -7,11 +7,5 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-changeme}
-      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-string}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-}
       DATABASE_URL: ${DATABASE_URL:-file:./data/app.db}
     restart: unless-stopped

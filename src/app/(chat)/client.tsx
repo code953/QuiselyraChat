@@ -5,14 +5,15 @@ import Link from "next/link";
 import { Sidebar } from "@/components/sidebar";
 import { MessageList } from "@/components/message-list";
 import { ChatInput } from "@/components/chat-input";
-import { ModelSelector } from "@/components/model-selector";
-import { PersonaSelector } from "@/components/persona-selector";
+import { ConversationTitle } from "@/components/conversation-title";
 import { AuthGuard } from "@/components/auth-guard";
+import { useConversationStore } from "@/stores/conversation";
 import { Button } from "@/components/ui/button";
 import { Menu, Settings } from "lucide-react";
 
 function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const currentId = useConversationStore((s) => s.currentId);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -28,9 +29,8 @@ function ChatPage() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="flex flex-1 items-center justify-center gap-1">
-            <ModelSelector />
-            <PersonaSelector />
+          <div className="flex flex-1 items-center justify-center gap-1 overflow-hidden px-2">
+            <ConversationTitle key={currentId ?? "none"} />
           </div>
           <Button variant="ghost" size="icon" asChild aria-label="设置">
             <Link href="/settings" prefetch={false}>
