@@ -21,16 +21,18 @@ The project follows a milestone-based roadmap. Refer to `project.md` §九 for d
 
 ### M1 Completed Features
 
-- Single password login → JWT auth
+- Single password login → JWT auth (access password, JWT secret & encryption key are all auto-generated and persisted in the DB on first boot — no env vars)
 - Multi-provider LLM support with OpenAI-compatible API (OpenAI, Anthropic, Google, xAI, DeepSeek, Moonshot, 智谱, OpenRouter, Ollama, custom)
 - Remote model list fetching from `/v1/models` + user-selected model library
 - Model capability testing (chat, vision, tools) with test result persistence
 - Persona system (5 built-in + custom with system prompts, greeting, recommended model)
-- Conversation management: folders, pin, archive, streaming chat
+- Conversation management: folders, pin, archive, streaming chat, inline title rename
 - Context window management: auto-truncation at 90% of max tokens
 - Model fallback on retryable errors (429, 503, timeout)
 - Token usage & cost tracking
 - API key AES-256-GCM encryption
+- Data export (JSON) + import/merge (conflict-safe, keeps originals and prefixes imported records with `[导入] `)
+- Change access password from Settings → 通用
 - Docker single-container deployment
 
 ### M2 Key Features to Implement
@@ -40,7 +42,7 @@ The project follows a milestone-based roadmap. Refer to `project.md` §九 for d
 - **Share links**: read-only conversation snapshots with token-based access. New `share_tokens` table needed.
 - **File attachments**: drag/drop/paste upload, server-side storage (local disk / S3), multi-modal input for vision models.
 - **Full-text search**: search across conversation titles and message content.
-- **Data backup/restore**: one-click export all data as JSON/Markdown, import/restore.
+- **Data backup/restore**: ✅ export all data as JSON and conflict-safe import/merge are implemented in M1 (`/api/data/import`). Remaining: Markdown export.
 - **Usage dashboard**: aggregated token consumption and cost visualization.
 - **PWA**: Service Worker caching for offline basic UI.
 
@@ -77,7 +79,7 @@ docker compose up -d --build   # Build and start container
 - **Styling**: Tailwind CSS 4, Radix UI, shadcn/ui-style components (New York variant)
 - **State**: Zustand stores (client-side), SQLite via Drizzle ORM (server-side)
 - **LLM**: OpenAI SDK (`openai` package) wrapping all providers through a unified `/v1/chat/completions` interface
-- **Auth**: Single password → bcrypt verify → JWT, stored in `localStorage` as `nekorachat_token`
+- **Auth**: Single password → bcrypt verify → JWT, stored in `localStorage` as `nekorachat_token`. The access password, JWT secret, and encryption key are auto-generated on first boot and persisted in the `settings` table (see `src/lib/secrets.ts`), not read from environment variables.
 - **Encryption**: AES-256-GCM for API key storage in the database
 
 ### Path Alias
@@ -102,7 +104,7 @@ Browser (Zustand stores) → fetch with JWT Bearer token
 - `src/components/` — Feature components (chat-input, message-bubble, sidebar, markdown-renderer, etc.).
 - `src/db/schema.ts` — All 8 Drizzle table definitions and TypeScript types.
 - `src/db/seed.ts` — Built-in persona definitions (5 defaults).
-- `src/lib/` — Server utilities: auth, encryption, LLM client factory, API helpers.
+- `src/lib/` — Server utilities: auth, secrets (auto-generated password/JWT/encryption keys), encryption, LLM client factory, API helpers.
 - `src/stores/` — Zustand stores: auth, chat, conversation, folder, model-config, model, persona.
 - `drizzle/` — SQL migration files.
 
@@ -122,21 +124,22 @@ Chat responses stream via SSE with a custom event format: `data: {content, messa
 
 ### Authentication Pattern
 
-- `withAuth()` wraps every protected API route — extracts and verifies JWT from `Authorization: Bearer` header.
-- Client stores token in `localStorage` and attaches it via `getAuthHeaders()` from `src/lib/api-helpers.ts`.
+- `withAuth()` wraps every protected API route — extracts and verifies the JWT from the `Authorization: Bearer` header (async: the JWT secret is loaded from the DB via `src/lib/secrets.ts`).
+- Client stores the token in `localStorage` under `nekorachat_token` and attaches it via `authHeaders()` from `src/lib/api-helpers.ts`.
 - `AuthGuard` component on protected pages redirects to `/login` if no valid token.
+- Title generation, encryption, and LLM client creation are async because they depend on DB-persisted secrets — see the `await encrypt()/decrypt()/signToken()/verifyToken()/createLLMClient()` call sites.
 
-## Environment Variables
+## Secrets & Environment Variables
+
+The access password, JWT signing secret, and API-key encryption key are **no longer configured via environment variables**. On first boot (`src/db/migrate.ts` → `ensureSecrets()` in `src/lib/secrets.ts`), the app auto-generates each one and persists it in the `settings` table under keys `access_password_hash`, `jwt_secret`, and `encryption_key`. The generated **initial access password is printed once to the startup log** (plaintext) — it can be changed later from Settings → 通用 (via `PUT /api/settings/password`). Because keys live in the DB, they survive restarts; losing the `./data` directory means encrypted API keys can no longer be decrypted and issued JWTs become invalid.
+
+Only one environment variable remains:
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `ACCESS_PASSWORD` | Yes | Login password (bcrypt hash or plaintext) |
-| `JWT_SECRET` | Yes | JWT signing key (32+ chars recommended) |
-| `ENCRYPTION_KEY` | Yes | AES key for API key encryption (64 hex chars / 32 bytes) |
 | `DATABASE_URL` | No | SQLite path, default `file:./data/app.db` |
-| `OPENAI_API_KEY` | No | For optional auto title generation |
-| `OPENAI_BASE_URL` | No | Base URL for title generation endpoint |
-| `OPENAI_MODEL` | No | Model for title generation |
+
+> Upgrading from an older version: the previous `ACCESS_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY` / `OPENAI_*` env vars are ignored. New keys are generated on first boot, so provider API keys must be re-entered and users must log in again with the new initial password.
 
 ## Conventions
 

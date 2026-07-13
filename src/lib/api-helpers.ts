@@ -24,7 +24,7 @@ export function stripSensitiveFields<T extends Record<string, unknown>>(obj: T):
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("nekorachat_token") || localStorage.getItem("nebulachat_token");
+  return localStorage.getItem("nekorachat_token");
 }
 
 export function authHeaders(): Record<string, string> {
