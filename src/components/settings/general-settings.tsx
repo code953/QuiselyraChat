@@ -219,7 +219,7 @@ export function GeneralSettings() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            访问密码由系统首次启动时自动生成（初始密码见启动日志）。你可以在此修改为自定义密码，修改后请使用新密码重新登录。
+            修改访问密码。修改后请使用新密码重新登录。
           </p>
           <div className="grid gap-3 sm:max-w-sm">
             <div className="space-y-1.5">

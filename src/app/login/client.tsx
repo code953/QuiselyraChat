@@ -53,6 +53,11 @@ export default function LoginClient() {
             进入
           </Button>
         </form>
+
+        <p className="text-center text-xs leading-relaxed text-muted-foreground">
+          首次使用？初始访问密码由系统在首次启动时自动生成，并打印在服务端启动日志中
+          （查找「NekoraChat 初始访问密码」一行）。登录后可在「设置 - 通用」中修改密码。
+        </p>
       </div>
     </div>
   );
