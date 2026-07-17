@@ -9,6 +9,8 @@ export interface ChatMessage {
   createdAt: Date;
   modelId?: string | null;
   tokenUsage?: { prompt: number; completion: number; total: number; cost?: number } | null;
+  searchResults?: Array<{ title: string; url: string; snippet: string }> | null;
+  searching?: boolean;
 }
 
 type StreamEvent = {
@@ -16,6 +18,8 @@ type StreamEvent = {
   messageId?: string;
   modelId?: string | null;
   usage?: ChatMessage["tokenUsage"];
+  searchResults?: ChatMessage["searchResults"];
+  status?: string;
   done?: boolean;
   error?: string;
 };
@@ -125,12 +129,24 @@ async function streamAssistantMessage(
                     ...message,
                     id: activeAssistantId,
                     status: "error" as const,
+                    searching: false,
                     content: message.content || data.error || "生成失败，请稍后重试",
                   }
                 : message
             ),
           }));
           break;
+        }
+
+        if (data.status === "searching") {
+          set((state) => ({
+            messages: state.messages.map((message) =>
+              message.id === previousAssistantId || message.id === activeAssistantId || message.id === assistantMessage.id
+                ? { ...message, searching: true }
+                : message
+            ),
+          }));
+          continue;
         }
 
         if (data.content) {
@@ -141,6 +157,7 @@ async function streamAssistantMessage(
                     ...message,
                     id: targetId,
                     content: message.content + data.content,
+                    searching: false,
                     modelId: data.modelId || message.modelId,
                   }
                 : message
@@ -152,7 +169,14 @@ async function streamAssistantMessage(
           set((state) => ({
             messages: state.messages.map((message) =>
               message.id === targetId || message.id === assistantMessage.id
-                ? { ...message, id: targetId, status: "success" as const, tokenUsage: data.usage || null }
+                ? {
+                    ...message,
+                    id: targetId,
+                    status: "success" as const,
+                    searching: false,
+                    tokenUsage: data.usage || null,
+                    searchResults: data.searchResults || null,
+                  }
                 : message
             ),
           }));

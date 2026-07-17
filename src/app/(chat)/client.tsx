@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar";
 import { MessageList } from "@/components/message-list";
 import { ChatInput } from "@/components/chat-input";
 import { ConversationTitle } from "@/components/conversation-title";
+import { ConversationActions } from "@/components/conversation-actions";
 import { AuthGuard } from "@/components/auth-guard";
 import { useConversationStore } from "@/stores/conversation";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ function ChatPage() {
               <Settings className="h-4 w-4" />
             </Link>
           </Button>
+          <ConversationActions />
         </header>
         <MessageList />
         <ChatInput />

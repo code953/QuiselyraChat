@@ -22,6 +22,7 @@ interface ConversationState {
   archiveConversation: (id: string, archived: boolean) => Promise<void>;
   moveToFolder: (id: string, folderId: string | null) => Promise<void>;
   setPersona: (id: string, personaId: string | null) => Promise<void>;
+  setSearchMode: (id: string, searchMode: "off" | "auto" | "forced") => Promise<void>;
 }
 
 export const useConversationStore = create<ConversationState>((set) => ({
@@ -181,6 +182,26 @@ export const useConversationStore = create<ConversationState>((set) => ({
       }
     } catch (error) {
       console.error("Failed to set persona:", error);
+      toast.error("操作失败");
+    }
+  },
+
+  setSearchMode: async (id: string, searchMode: "off" | "auto" | "forced") => {
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ searchMode }),
+      });
+      if (res.ok) {
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, searchMode } : c
+          ),
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to set search mode:", error);
       toast.error("操作失败");
     }
   },

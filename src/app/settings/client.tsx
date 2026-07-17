@@ -9,6 +9,8 @@ import { ProviderSettings } from "@/components/settings/provider-settings";
 import { ModelSettings } from "@/components/settings/model-settings";
 import { PersonaSettings } from "@/components/settings/persona-settings";
 import { GeneralSettings } from "@/components/settings/general-settings";
+import { UsageSettings } from "@/components/settings/usage-settings";
+import { SearchSettings } from "@/components/settings/search-settings";
 
 function SettingsLayout() {
   return (
@@ -28,6 +30,8 @@ function SettingsLayout() {
             <TabsTrigger value="providers">服务商</TabsTrigger>
             <TabsTrigger value="models">模型</TabsTrigger>
             <TabsTrigger value="personas">人格</TabsTrigger>
+            <TabsTrigger value="search">联网搜索</TabsTrigger>
+            <TabsTrigger value="usage">统计</TabsTrigger>
             <TabsTrigger value="general">通用</TabsTrigger>
           </TabsList>
         </div>
@@ -41,6 +45,12 @@ function SettingsLayout() {
           </TabsContent>
           <TabsContent value="personas" className="p-4">
             <PersonaSettings />
+          </TabsContent>
+          <TabsContent value="usage" className="p-4">
+            <UsageSettings />
+          </TabsContent>
+          <TabsContent value="search" className="p-4">
+            <SearchSettings />
           </TabsContent>
           <TabsContent value="general" className="p-4">
             <GeneralSettings />

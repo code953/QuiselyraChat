@@ -6,20 +6,26 @@ import { eq, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createLLMClient } from "@/lib/llm-client";
 import { apiBadRequest } from "@/lib/api-helpers";
+import { getActiveSearchConfig, getSearchProvider, type SearchProvider, type SearchResult } from "@/lib/search";
+import { runToolPhase, buildForcedContext } from "@/lib/search/tool-phase";
 import type OpenAI from "openai";
 
 type TokenUsage = { prompt: number; completion: number; total: number; cost?: number };
 type Model = typeof models.$inferSelect;
 type ModelConfig = typeof modelConfigs.$inferSelect;
+type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam;
 
 async function attemptStream(
   streamClient: OpenAI,
   streamModelName: string,
-  openaiMessages: Array<{ role: "user" | "assistant" | "system"; content: string }>,
+  openaiMessages: ChatMessage[],
   assistantMessageId: string,
   encoder: TextEncoder,
   controller: ReadableStreamDefaultController,
   contentRef: { value: string },
+  extraParams: Record<string, unknown> = {},
+  nativeProvider?: SearchProvider,
+  citationsRef?: { value: SearchResult[] },
 ): Promise<{ usage: TokenUsage | null; success: boolean; retryable: boolean; error?: string }> {
   let usage: TokenUsage | null = null;
   try {
@@ -28,6 +34,7 @@ async function attemptStream(
       messages: openaiMessages,
       stream: true,
       stream_options: { include_usage: true },
+      ...extraParams,
     });
 
     for await (const chunk of response) {
@@ -37,6 +44,12 @@ async function attemptStream(
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ content: delta, messageId: assistantMessageId })}\n\n`)
         );
+      }
+
+      // 原生搜索：从 chunk 上捕获非标准的引用来源字段
+      if (nativeProvider?.parseCitations && citationsRef) {
+        const parsed = nativeProvider.parseCitations(chunk);
+        if (parsed.length > 0) citationsRef.value = parsed;
       }
 
       if (chunk.usage) {
@@ -123,7 +136,7 @@ export const POST = withAuth(async (req: NextRequest) => {
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt));
 
-  let openaiMessages: Array<{ role: "user" | "assistant" | "system"; content: string }> = [];
+  let openaiMessages: ChatMessage[] = [];
 
   if (systemPrompt) {
     openaiMessages.push({ role: "system", content: systemPrompt });
@@ -143,12 +156,12 @@ export const POST = withAuth(async (req: NextRequest) => {
     const chatMsgs = systemPrompt ? openaiMessages.slice(1) : [...openaiMessages];
 
     for (const msg of systemMsg) {
-      totalTokens += Math.ceil(msg.content.length / 4);
+      totalTokens += Math.ceil(String(msg.content ?? "").length / 4);
     }
 
     const kept: typeof chatMsgs = [];
     for (let i = chatMsgs.length - 1; i >= 0; i--) {
-      const estimated = Math.ceil(chatMsgs[i].content.length / 4);
+      const estimated = Math.ceil(String(chatMsgs[i].content ?? "").length / 4);
       if (totalTokens + estimated > maxTokens * 0.9) break;
       totalTokens += estimated;
       kept.unshift(chatMsgs[i]);
@@ -161,31 +174,101 @@ export const POST = withAuth(async (req: NextRequest) => {
   const encoder = new TextEncoder();
   const contentRef = { value: "" };
   const startTime = Date.now();
+  const searchMode = conversation.searchMode || "off";
 
   const stream = new ReadableStream({
     async start(controller) {
-      let result = await attemptStream(client, modelName, openaiMessages, assistantMessageId, encoder, controller, contentRef);
+      let extraParams: Record<string, unknown> = {};
+      let nativeProvider: SearchProvider | undefined;
+      const citationsRef = { value: [] as SearchResult[] };
+      let searchUsage: TokenUsage | null = null;
+      let directAnswered = false;
 
-      if (!result.success && result.retryable && config && contentRef.value === "") {
-        const fallbackModels = await db.select().from(models).where(eq(models.modelConfigId, config.id));
-        const fallback = fallbackModels.find((m) => m.enabled && m.id !== model?.id);
-        if (fallback) {
-          result = await attemptStream(client, fallback.modelId, openaiMessages, assistantMessageId, encoder, controller, contentRef);
+      // ---- 联网搜索阶段 ----
+      if (searchMode !== "off") {
+        try {
+          const searchConfig = await getActiveSearchConfig();
+          if (searchConfig) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "searching" })}\n\n`));
+            const provider = await getSearchProvider(searchConfig);
+
+            if (provider.kind === "native") {
+              extraParams = provider.buildNativeParams?.() || {};
+              nativeProvider = provider;
+            } else if (searchMode === "forced" || !model?.capabilities?.tools) {
+              // 强制模式，或模型不支持工具调用时退化为「先检索再作答」
+              const results = await provider.search(content).catch(() => [] as SearchResult[]);
+              citationsRef.value = results;
+              const ctx = buildForcedContext(results);
+              if (ctx) openaiMessages.push({ role: "system", content: ctx });
+            } else {
+              // auto 模式 + 支持工具的模型：两阶段
+              const toolResult = await runToolPhase(client, modelName, openaiMessages, provider);
+              searchUsage = toolResult.usage;
+              if (toolResult.citations.length > 0) {
+                citationsRef.value = toolResult.citations;
+                openaiMessages = toolResult.augmentedMessages;
+              } else if (toolResult.directAnswer !== undefined) {
+                // 模型未检索，直接采用其答案
+                directAnswered = true;
+                contentRef.value = toolResult.directAnswer;
+                if (contentRef.value) {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ content: contentRef.value, messageId: assistantMessageId })}\n\n`)
+                  );
+                }
+              }
+            }
+          }
+        } catch {
+          // 搜索失败静默降级为普通聊天
+        }
+      }
+
+      // ---- 生成阶段 ----
+      let result: { usage: TokenUsage | null; success: boolean; retryable: boolean; error?: string };
+
+      if (directAnswered) {
+        result = { usage: searchUsage, success: true, retryable: false };
+      } else {
+        result = await attemptStream(
+          client, modelName, openaiMessages, assistantMessageId, encoder, controller, contentRef,
+          extraParams, nativeProvider, citationsRef
+        );
+
+        if (!result.success && result.retryable && config && contentRef.value === "") {
+          const fallbackModels = await db.select().from(models).where(eq(models.modelConfigId, config.id));
+          const fallback = fallbackModels.find((m) => m.enabled && m.id !== model?.id);
+          if (fallback) {
+            result = await attemptStream(
+              client, fallback.modelId, openaiMessages, assistantMessageId, encoder, controller, contentRef,
+              extraParams, nativeProvider, citationsRef
+            );
+          }
         }
       }
 
       const latencyMs = Date.now() - startTime;
+      const citations = citationsRef.value.length > 0 ? citationsRef.value.map((c) => ({ title: c.title, url: c.url, snippet: c.snippet })) : null;
 
       if (result.success) {
-        const tokenUsage = result.usage || null;
+        // 合并两阶段用量
+        const streamUsage = result.usage;
+        const combined: TokenUsage | null = streamUsage || searchUsage
+          ? {
+              prompt: (streamUsage?.prompt || 0) + (searchUsage?.prompt || 0),
+              completion: (streamUsage?.completion || 0) + (searchUsage?.completion || 0),
+              total: (streamUsage?.total || 0) + (searchUsage?.total || 0),
+            }
+          : null;
 
         let cost: number | undefined;
-        if (tokenUsage && model?.pricing) {
+        if (combined && model?.pricing) {
           const pricing = model.pricing as { inputPer1k?: number; outputPer1k?: number };
-          cost = ((pricing.inputPer1k || 0) * tokenUsage.prompt + (pricing.outputPer1k || 0) * tokenUsage.completion) / 1000;
+          cost = ((pricing.inputPer1k || 0) * combined.prompt + (pricing.outputPer1k || 0) * combined.completion) / 1000;
         }
 
-        const storedUsage = tokenUsage ? { ...tokenUsage, ...(cost !== undefined ? { cost } : {}) } : null;
+        const storedUsage = combined ? { ...combined, ...(cost !== undefined ? { cost } : {}) } : null;
 
         await db.insert(messages).values({
           id: assistantMessageId,
@@ -194,24 +277,25 @@ export const POST = withAuth(async (req: NextRequest) => {
           content: contentRef.value,
           modelId: modelId || null,
           tokenUsage: storedUsage,
+          searchResults: citations,
           latencyMs,
           status: "success",
         });
 
-        if (tokenUsage) {
+        if (combined) {
           await db.insert(usageLogs).values({
             id: nanoid(),
             modelId: modelId || null,
             provider: config?.provider || null,
-            tokensIn: tokenUsage.prompt,
-            tokensOut: tokenUsage.completion,
+            tokensIn: combined.prompt,
+            tokensOut: combined.completion,
             cost: cost || 0,
-            requestType: "chat",
+            requestType: citations ? "search" : "chat",
           });
         }
 
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ done: true, messageId: assistantMessageId, usage: result.usage })}\n\n`)
+          encoder.encode(`data: ${JSON.stringify({ done: true, messageId: assistantMessageId, usage: combined, searchResults: citations })}\n\n`)
         );
       } else {
         if (contentRef.value) {

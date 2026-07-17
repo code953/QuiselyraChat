@@ -7,6 +7,7 @@ export const conversations = sqliteTable("conversations", {
   folderId: text("folder_id"),
   pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  searchMode: text("search_mode", { enum: ["off", "auto", "forced"] }).notNull().default("off"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
@@ -18,6 +19,7 @@ export const messages = sqliteTable("messages", {
   role: text("role", { enum: ["user", "assistant", "system", "tool"] }).notNull(),
   content: text("content").notNull(),
   attachments: text("attachments", { mode: "json" }).$type<Array<{ type: string; url: string; name: string; size: number }>>(),
+  searchResults: text("search_results", { mode: "json" }).$type<Array<{ title: string; url: string; snippet: string }>>(),
   tokenUsage: text("token_usage", { mode: "json" }).$type<{ prompt: number; completion: number; total: number; cost?: number }>(),
   modelId: text("model_id"),
   latencyMs: integer("latency_ms"),
@@ -96,6 +98,43 @@ export const settings = sqliteTable("settings", {
   value: text("value"),
 });
 
+export const searchConfigs = sqliteTable("search_configs", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  name: text("name").notNull(),
+  baseUrl: text("base_url"),
+  apiKeyEncrypted: text("api_key_encrypted"),
+  kind: text("kind", { enum: ["function", "native"] }).notNull().default("function"),
+  params: text("params", { mode: "json" }).$type<Record<string, unknown>>(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const shareTokens = sqliteTable("share_tokens", {
+  id: text("id").primaryKey(),
+  token: text("token").notNull().unique(),
+  conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  expiresAt: integer("expires_at", { mode: "timestamp" }),
+  viewCount: integer("view_count").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("idx_share_token").on(table.token),
+]);
+
+export const images = sqliteTable("images", {
+  id: text("id").primaryKey(),
+  prompt: text("prompt").notNull(),
+  modelId: text("model_id"),
+  provider: text("provider"),
+  size: text("size"),
+  filePath: text("file_path").notNull(),
+  status: text("status", { enum: ["success", "error"] }).notNull().default("success"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  index("idx_images_created").on(table.createdAt),
+]);
+
 export type Conversation = typeof conversations.$inferSelect;
 export type NewConversation = typeof conversations.$inferInsert;
 export type Message = typeof messages.$inferSelect;
@@ -108,3 +147,9 @@ export type Model = typeof models.$inferSelect;
 export type NewModel = typeof models.$inferInsert;
 export type Folder = typeof folders.$inferSelect;
 export type UsageLog = typeof usageLogs.$inferSelect;
+export type SearchConfig = typeof searchConfigs.$inferSelect;
+export type NewSearchConfig = typeof searchConfigs.$inferInsert;
+export type ShareToken = typeof shareTokens.$inferSelect;
+export type NewShareToken = typeof shareTokens.$inferInsert;
+export type Image = typeof images.$inferSelect;
+export type NewImage = typeof images.$inferInsert;

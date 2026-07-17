@@ -17,6 +17,9 @@ export const PATCH = withAuth(async (
   if (body.pinned !== undefined) updates.pinned = body.pinned;
   if (body.archived !== undefined) updates.archived = body.archived;
   if (body.folderId !== undefined) updates.folderId = body.folderId;
+  if (body.searchMode !== undefined && ["off", "auto", "forced"].includes(body.searchMode)) {
+    updates.searchMode = body.searchMode;
+  }
   if (body.personaId !== undefined) {
     if (body.personaId === null) {
       updates.personaId = null;

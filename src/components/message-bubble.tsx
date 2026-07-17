@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
-import { Bot, User, Loader2, Copy, Check, RotateCcw, AlertCircle } from "lucide-react";
+import { SearchCitations } from "@/components/search-citations";
+import { Bot, User, Loader2, Copy, Check, RotateCcw, AlertCircle, Globe } from "lucide-react";
 import { useModelStore } from "@/stores/model";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { cn } from "@/lib/utils";
@@ -61,9 +62,15 @@ export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
             <>
+              {message.searching && !message.content && (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5 animate-pulse" />
+                  <span className="text-xs">正在联网搜索…</span>
+                </div>
+              )}
               {message.content ? (
                 <MarkdownRenderer content={message.content} />
-              ) : isStreaming ? (
+              ) : isStreaming && !message.searching ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : null}
             </>
@@ -103,6 +110,9 @@ export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
             <AlertCircle className="h-3 w-3 shrink-0" />
             发送失败
           </div>
+        )}
+        {!isUser && message.searchResults && message.searchResults.length > 0 && (
+          <SearchCitations results={message.searchResults} />
         )}
         {!isUser && !isStreaming && (modelName || message.tokenUsage) && (
           <div className="flex items-center gap-2 px-1">

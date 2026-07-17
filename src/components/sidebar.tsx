@@ -37,8 +37,11 @@ import {
   PinOff,
   ArchiveRestore,
   FolderMinus,
+  Search,
+  Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { authHeaders } from "@/lib/api-helpers";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface SidebarProps {
@@ -158,11 +161,38 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    Array<{ conversationId: string; title: string; matchType: string; snippet: string; role?: string }>
+  >([]);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     fetchConversations();
     fetchFolders();
   }, [fetchConversations, fetchFolders]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      // 查询为空时渲染直接显示会话树，无需同步清空 state
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { headers: authHeaders() });
+        if (res.ok) {
+          setSearchResults(await res.json());
+        }
+      } catch {
+        // 忽略搜索错误
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const pinnedConvs = useMemo(
     () => conversations.filter((c) => c.pinned && !c.archived),
@@ -316,6 +346,25 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </Button>
         </div>
 
+        <div className="relative px-2 pb-2">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索对话…"
+            className="h-8 pl-7 text-sm"
+          />
+          {searchQuery && (
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setSearchQuery("")}
+              aria-label="清除搜索"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
         {creatingFolder && (
           <div className="flex items-center gap-1 px-2 pb-2">
             <Input
@@ -334,6 +383,34 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         )}
 
         <ScrollArea className="flex-1">
+          {searchQuery.trim() ? (
+            <div className="space-y-1 p-2">
+              {searching && (
+                <p className="px-2 py-1 text-xs text-muted-foreground">搜索中…</p>
+              )}
+              {!searching && searchResults.length === 0 && (
+                <p className="px-2 py-1 text-xs text-muted-foreground">未找到匹配结果</p>
+              )}
+              {searchResults.map((r, i) => (
+                <div
+                  key={`${r.conversationId}-${i}`}
+                  onClick={() => { handleSelect(r.conversationId); setSearchQuery(""); }}
+                  className="cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors hover:bg-sidebar-accent"
+                >
+                  <div className="flex items-center gap-1.5 truncate font-medium">
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{r.title}</span>
+                  </div>
+                  {r.matchType === "message" && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {r.role === "user" ? "我：" : "助手："}
+                      {r.snippet}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="space-y-1 p-2">
             {pinnedConvs.length > 0 && (
               <div className="mb-2">
@@ -407,9 +484,16 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               </div>
             )}
           </div>
+          )}
         </ScrollArea>
 
         <div className="space-y-1 border-t p-2">
+          <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground" asChild>
+            <Link href="/images" prefetch={false}>
+              <ImageIcon className="h-4 w-4" />
+              图片生成
+            </Link>
+          </Button>
           <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground" asChild>
             <Link href="/settings" prefetch={false}>
               <Settings className="h-4 w-4" />
