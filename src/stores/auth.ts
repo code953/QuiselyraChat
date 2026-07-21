@@ -14,7 +14,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   initAuth: () => {
     if (typeof window === "undefined") return;
-    const token = localStorage.getItem("nekorachat_token");
+    const token = localStorage.getItem("quiselyrachat_token");
     if (token) {
       set({ token, isAuthenticated: true });
     }
@@ -31,7 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (!res.ok) return false;
 
       const { token } = await res.json();
-      localStorage.setItem("nekorachat_token", token);
+      localStorage.setItem("quiselyrachat_token", token);
       set({ token, isAuthenticated: true });
       return true;
     } catch {
@@ -40,7 +40,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    localStorage.removeItem("nekorachat_token");
+    localStorage.removeItem("quiselyrachat_token");
     set({ token: null, isAuthenticated: false });
   },
 }));

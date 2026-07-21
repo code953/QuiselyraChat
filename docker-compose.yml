@@ -1,7 +1,7 @@
 services:
-  nekorachat:
+  quiselyrachat:
     build: .
-    image: nekorachat:local
+    image: quiselyrachat:local
     ports:
       - "3000:3000"
     volumes:

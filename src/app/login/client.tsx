@@ -35,7 +35,7 @@ export default function LoginClient() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Lock className="h-6 w-6 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold">NekoraChat</h1>
+          <h1 className="text-2xl font-bold">QuiselyraChat</h1>
           <p className="text-sm text-muted-foreground">请输入访问密码</p>
         </div>
 
@@ -56,7 +56,7 @@ export default function LoginClient() {
 
         <p className="text-center text-xs leading-relaxed text-muted-foreground">
           首次使用？初始访问密码由系统在首次启动时自动生成，并打印在服务端启动日志中
-          （查找「NekoraChat 初始访问密码」一行）。登录后可在「设置 - 通用」中修改密码。
+          （查找「QuiselyraChat 初始访问密码」一行）。登录后可在「设置 - 通用」中修改密码。
         </p>
       </div>
     </div>

@@ -62,7 +62,7 @@ export default async function SharePage({
       <div className="mx-auto max-w-3xl px-4 py-8">
         <header className="mb-6 border-b pb-4">
           <h1 className="text-2xl font-semibold">{data.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">只读分享 · 由 NekoraChat 生成</p>
+          <p className="mt-1 text-sm text-muted-foreground">只读分享 · 由 QuiselyraChat 生成</p>
         </header>
 
         <div className="space-y-6">
@@ -85,7 +85,7 @@ export default async function SharePage({
         </div>
 
         <footer className="mt-10 border-t pt-4 text-center text-xs text-muted-foreground">
-          由 NekoraChat 分享
+          由 QuiselyraChat 分享
         </footer>
       </div>
     </div>

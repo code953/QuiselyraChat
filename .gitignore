@@ -53,3 +53,4 @@ next-env.d.ts
 project.md
 AGENTS.md
 CLAUDE.md
+.claude/*

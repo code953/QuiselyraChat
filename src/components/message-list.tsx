@@ -20,7 +20,7 @@ export function MessageList() {
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
         <MessageSquare className="h-12 w-12" />
         <div className="text-center">
-          <h3 className="text-lg font-medium">NekoraChat</h3>
+          <h3 className="text-lg font-medium">QuiselyraChat</h3>
           <p className="text-sm">开始一段新的对话吧</p>
         </div>
       </div>

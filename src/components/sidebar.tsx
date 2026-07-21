@@ -326,7 +326,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         )}
       >
         <div className="flex items-center justify-between border-b p-3">
-          <h1 className="text-lg font-semibold">NekoraChat</h1>
+          <h1 className="text-lg font-semibold">QuiselyraChat</h1>
           <Button variant="ghost" size="icon" className="md:hidden" onClick={onClose} aria-label="关闭侧边栏">
             <X className="h-4 w-4" />
           </Button>

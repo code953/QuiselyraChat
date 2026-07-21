@@ -54,7 +54,7 @@ function ImagesLayout() {
   const handleDownload = (url: string, id: string) => {
     const a = document.createElement("a");
     a.href = url;
-    a.download = `nekorachat-${id}.png`;
+    a.download = `quiselyrachat-${id}.png`;
     a.click();
   };
 

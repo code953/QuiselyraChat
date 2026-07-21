@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NekoraChat is a single-user, self-hosted AI chat client built with Next.js 16 (App Router), React 19, and TypeScript. It supports multiple LLM providers via the OpenAI SDK's compatible API format. The UI language is Chinese. Full design document: `project.md`.
+QuiselyraChat is a single-user, self-hosted AI chat client built with Next.js 16 (App Router), React 19, and TypeScript. It supports multiple LLM providers via the OpenAI SDK's compatible API format. The UI language is Chinese. Full design document: `project.md`.
 
 ## Project Phases & Roadmap
 
@@ -79,7 +79,7 @@ docker compose up -d --build   # Build and start container
 - **Styling**: Tailwind CSS 4, Radix UI, shadcn/ui-style components (New York variant)
 - **State**: Zustand stores (client-side), SQLite via Drizzle ORM (server-side)
 - **LLM**: OpenAI SDK (`openai` package) wrapping all providers through a unified `/v1/chat/completions` interface
-- **Auth**: Single password → bcrypt verify → JWT, stored in `localStorage` as `nekorachat_token`. The access password, JWT secret, and encryption key are auto-generated on first boot and persisted in the `settings` table (see `src/lib/secrets.ts`), not read from environment variables.
+- **Auth**: Single password → bcrypt verify → JWT, stored in `localStorage` as `quiselyrachat_token`. The access password, JWT secret, and encryption key are auto-generated on first boot and persisted in the `settings` table (see `src/lib/secrets.ts`), not read from environment variables.
 - **Encryption**: AES-256-GCM for API key storage in the database
 
 ### Path Alias
@@ -125,7 +125,7 @@ Chat responses stream via SSE with a custom event format: `data: {content, messa
 ### Authentication Pattern
 
 - `withAuth()` wraps every protected API route — extracts and verifies the JWT from the `Authorization: Bearer` header (async: the JWT secret is loaded from the DB via `src/lib/secrets.ts`).
-- Client stores the token in `localStorage` under `nekorachat_token` and attaches it via `authHeaders()` from `src/lib/api-helpers.ts`.
+- Client stores the token in `localStorage` under `quiselyrachat_token` and attaches it via `authHeaders()` from `src/lib/api-helpers.ts`.
 - `AuthGuard` component on protected pages redirects to `/login` if no valid token.
 - Title generation, encryption, and LLM client creation are async because they depend on DB-persisted secrets — see the `await encrypt()/decrypt()/signToken()/verifyToken()/createLLMClient()` call sites.
 

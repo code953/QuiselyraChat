@@ -72,8 +72,8 @@ function logGeneratedPassword(plaintext: string): void {
   // 因此把密码放在独立且带清晰前缀的一行，压行后依然能被看到/搜索到。
   const line = "=".repeat(56);
   console.log(line);
-  console.log("NekoraChat 首次启动：已自动生成初始访问密码（仅显示一次，请妥善保存）");
-  console.log(`NekoraChat 初始访问密码 => ${plaintext}`);
+  console.log("QuiselyraChat 首次启动：已自动生成初始访问密码（仅显示一次，请妥善保存）");
+  console.log(`QuiselyraChat 初始访问密码 => ${plaintext}`);
   console.log("登录后可在「设置 - 通用」中修改密码。");
   console.log(line);
 }

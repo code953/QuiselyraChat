@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NekoraChat",
+  title: "QuiselyraChat",
   description: "Lightweight self-hosted AI chat client",
 };
 
