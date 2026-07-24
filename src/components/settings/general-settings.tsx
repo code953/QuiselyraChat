@@ -26,6 +26,12 @@ export function GeneralSettings() {
   const [savingSummaryModel, setSavingSummaryModel] = useState(false);
   const [summaryModelMsg, setSummaryModelMsg] = useState("");
 
+  // OCR 模型
+  const [ocrModelId, setOcrModelId] = useState<string>("__none__");
+  const [loadingOcrModel, setLoadingOcrModel] = useState(true);
+  const [savingOcrModel, setSavingOcrModel] = useState(false);
+  const [ocrModelMsg, setOcrModelMsg] = useState("");
+
   const { theme, setTheme } = useTheme();
 
   const [exporting, setExporting] = useState(false);
@@ -59,6 +65,23 @@ export function GeneralSettings() {
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+    fetch("/api/settings/ocr-model", { headers: authHeaders() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (ignore) return;
+        setOcrModelId(data?.modelId || "__none__");
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ignore) setLoadingOcrModel(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const handleSaveSummaryModel = useCallback(async () => {
     setSavingSummaryModel(true);
     setSummaryModelMsg("");
@@ -75,6 +98,23 @@ export function GeneralSettings() {
       setSavingSummaryModel(false);
     }
   }, [summaryModelId]);
+
+  const handleSaveOcrModel = useCallback(async () => {
+    setSavingOcrModel(true);
+    setOcrModelMsg("");
+    try {
+      const res = await fetch("/api/settings/ocr-model", {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ modelId: ocrModelId === "__none__" ? null : ocrModelId }),
+      });
+      setOcrModelMsg(res.ok ? "已保存" : "保存失败");
+    } catch {
+      setOcrModelMsg("保存失败");
+    } finally {
+      setSavingOcrModel(false);
+    }
+  }, [ocrModelId]);
 
   const handleChangePassword = useCallback(async () => {
     if (!currentPassword) {
@@ -288,6 +328,40 @@ export function GeneralSettings() {
           <Button size="sm" onClick={handleSaveSummaryModel} disabled={savingSummaryModel || loadingSummaryModel}>
             {savingSummaryModel && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             保存总结模型
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="py-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">OCR 识图模型</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            当聊天模型不支持识图（未勾选 Vision 能力）时，将使用此模型来识别图片内容。
+          </p>
+          <div className="space-y-2">
+            <Label>默认 OCR 模型</Label>
+            <Select value={ocrModelId} onValueChange={setOcrModelId} disabled={loadingOcrModel}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">未设置</SelectItem>
+                {models
+                  .filter((m) => m.enabled && m.capabilities?.vision)
+                  .map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.providerName} / {model.displayName || model.modelId}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {ocrModelMsg && <p className="text-sm text-muted-foreground">{ocrModelMsg}</p>}
+          <Button size="sm" onClick={handleSaveOcrModel} disabled={savingOcrModel || loadingOcrModel}>
+            {savingOcrModel && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            保存 OCR 模型
           </Button>
         </CardContent>
       </Card>

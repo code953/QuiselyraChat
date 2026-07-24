@@ -1,19 +1,150 @@
 import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
-import { messages, conversations, models, modelConfigs, personas, usageLogs } from "@/db/schema";
+import { messages, conversations, models, modelConfigs, personas, usageLogs, settings } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createLLMClient } from "@/lib/llm-client";
 import { apiBadRequest } from "@/lib/api-helpers";
 import { getActiveSearchConfig, getSearchProvider, type SearchProvider, type SearchResult } from "@/lib/search";
 import { runToolPhase, buildForcedContext } from "@/lib/search/tool-phase";
+import { readUploadAsBase64DataUrl, readUploadAsText } from "@/lib/storage";
 import type OpenAI from "openai";
 
 type TokenUsage = { prompt: number; completion: number; total: number; cost?: number };
 type Model = typeof models.$inferSelect;
 type ModelConfig = typeof modelConfigs.$inferSelect;
 type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam;
+type Attachment = { type: string; url: string; name: string; size: number };
+
+// ---- 附件 → 多模态内容构建 ----
+
+async function buildMessageContent(
+  textContent: string,
+  attachments: Attachment[] | null | undefined,
+  hasVision: boolean,
+  ocrDescriptions?: Map<string, string>,
+): Promise<string | Array<OpenAI.Chat.ChatCompletionContentPart>> {
+  if (!attachments?.length) return textContent;
+
+  const parts: Array<OpenAI.Chat.ChatCompletionContentPart> = [];
+
+  // 文本文件内容注入上下文
+  for (const att of attachments) {
+    if (att.type === "text") {
+      const fileContent = await readUploadAsText(att.url);
+      if (fileContent) {
+        parts.push({ type: "text", text: `[文件: ${att.name}]\n${fileContent}` });
+      }
+    }
+  }
+
+  // 用户消息正文
+  parts.push({ type: "text", text: textContent });
+
+  // 图片附件
+  for (const att of attachments) {
+    if (att.type === "image") {
+      if (hasVision) {
+        // 模型支持 Vision：直接发送 base64 图片
+        const dataUrl = await readUploadAsBase64DataUrl(att.url);
+        if (dataUrl) {
+          parts.push({ type: "image_url", image_url: { url: dataUrl } });
+        }
+      } else {
+        // 模型不支持 Vision：注入 OCR 描述
+        const desc = ocrDescriptions?.get(att.url);
+        if (desc) {
+          parts.push({ type: "text", text: `[图片识别结果: ${att.name}]\n${desc}` });
+        }
+      }
+    }
+  }
+
+  // 如果最终只有一个 text part 且无图片，退化为纯字符串
+  if (parts.length === 1 && parts[0].type === "text") {
+    return parts[0].text;
+  }
+
+  return parts;
+}
+
+/**
+ * 使用 OCR 模型识别图片内容，返回 Map<url, description>。
+ */
+async function runOcrForImages(
+  attachments: Attachment[],
+): Promise<{ descriptions: Map<string, string>; warning?: string }> {
+  const imageAtts = attachments.filter((a) => a.type === "image");
+  if (imageAtts.length === 0) return { descriptions: new Map() };
+
+  // 读取 OCR 模型设置
+  const [ocrSetting] = await db.select().from(settings).where(eq(settings.key, "ocr_model_id"));
+  const ocrModelId = ocrSetting?.value;
+
+  if (!ocrModelId) {
+    return {
+      descriptions: new Map(),
+      warning: "当前模型不支持识图，且未设置 OCR 模型。请前往「设置 → 通用」配置 OCR 模型，或为当前模型勾选识图能力。",
+    };
+  }
+
+  const [ocrModel] = await db.select().from(models).where(eq(models.id, ocrModelId));
+  if (!ocrModel) {
+    return { descriptions: new Map(), warning: "OCR 模型不存在，请重新配置。" };
+  }
+
+  const [ocrConfig] = await db.select().from(modelConfigs).where(eq(modelConfigs.id, ocrModel.modelConfigId));
+  if (!ocrConfig) {
+    return { descriptions: new Map(), warning: "OCR 模型的服务商配置不存在。" };
+  }
+
+  const ocrClient = await createLLMClient(ocrConfig);
+  const descriptions = new Map<string, string>();
+
+  for (const att of imageAtts) {
+    const dataUrl = await readUploadAsBase64DataUrl(att.url);
+    if (!dataUrl) continue;
+
+    try {
+      const response = await ocrClient.chat.completions.create({
+        model: ocrModel.modelId,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "请详细描述这张图片的内容，包括文字、图表、布局等所有可见信息。" },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+        max_tokens: 1000,
+      });
+
+      const desc = response.choices[0]?.message?.content;
+      if (desc) descriptions.set(att.url, desc);
+    } catch {
+      // 单张图片 OCR 失败不中断整体流程
+    }
+  }
+
+  return { descriptions };
+}
+
+function estimateTokens(content: string | Array<OpenAI.Chat.ChatCompletionContentPart>): number {
+  if (typeof content === "string") {
+    return Math.ceil(content.length / 4);
+  }
+  let total = 0;
+  for (const part of content) {
+    if (part.type === "text") {
+      total += Math.ceil(part.text.length / 4);
+    } else if (part.type === "image_url") {
+      total += 800; // 图片固定估值
+    }
+  }
+  return total;
+}
 
 async function attemptStream(
   streamClient: OpenAI,
@@ -72,7 +203,12 @@ async function attemptStream(
 }
 
 export const POST = withAuth(async (req: NextRequest) => {
-  const { conversationId, content, modelId } = await req.json();
+  const { conversationId, content, modelId, attachments } = await req.json() as {
+    conversationId?: string;
+    content?: string;
+    modelId?: string;
+    attachments?: Attachment[];
+  };
 
   if (!conversationId || !content) {
     return apiBadRequest("conversationId and content are required");
@@ -121,6 +257,7 @@ export const POST = withAuth(async (req: NextRequest) => {
     conversationId,
     role: "user",
     content,
+    attachments: attachments?.length ? attachments : null,
     modelId: modelId || null,
     status: "success",
   });
@@ -136,18 +273,39 @@ export const POST = withAuth(async (req: NextRequest) => {
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt));
 
+  // ---- OCR 预处理（当模型不支持 Vision 时） ----
+  const hasVision = Boolean(model?.capabilities?.vision);
+  const allAttachments = history.flatMap((m) => (m.attachments as Attachment[]) || []);
+  const hasImageAttachments = allAttachments.some((a) => a.type === "image");
+
+  let ocrDescriptions: Map<string, string> | undefined;
+  let ocrWarning: string | undefined;
+
+  if (!hasVision && hasImageAttachments) {
+    const ocrResult = await runOcrForImages(allAttachments);
+    ocrDescriptions = ocrResult.descriptions;
+    ocrWarning = ocrResult.warning;
+  }
+
+  // ---- 构建 openaiMessages ----
   let openaiMessages: ChatMessage[] = [];
 
   if (systemPrompt) {
     openaiMessages.push({ role: "system", content: systemPrompt });
   }
 
-  openaiMessages.push(
-    ...history.map((m) => ({
+  for (const m of history) {
+    const msgContent = await buildMessageContent(
+      m.content,
+      m.attachments as Attachment[] | null,
+      hasVision,
+      ocrDescriptions,
+    );
+    openaiMessages.push({
       role: m.role as "user" | "assistant" | "system",
-      content: m.content,
-    }))
-  );
+      content: msgContent as string,
+    });
+  }
 
   if (model?.contextWindow) {
     const maxTokens = model.contextWindow;
@@ -156,12 +314,12 @@ export const POST = withAuth(async (req: NextRequest) => {
     const chatMsgs = systemPrompt ? openaiMessages.slice(1) : [...openaiMessages];
 
     for (const msg of systemMsg) {
-      totalTokens += Math.ceil(String(msg.content ?? "").length / 4);
+      totalTokens += estimateTokens(msg.content as string);
     }
 
     const kept: typeof chatMsgs = [];
     for (let i = chatMsgs.length - 1; i >= 0; i--) {
-      const estimated = Math.ceil(String(chatMsgs[i].content ?? "").length / 4);
+      const estimated = estimateTokens(chatMsgs[i].content as string | Array<OpenAI.Chat.ChatCompletionContentPart>);
       if (totalTokens + estimated > maxTokens * 0.9) break;
       totalTokens += estimated;
       kept.unshift(chatMsgs[i]);
@@ -183,6 +341,11 @@ export const POST = withAuth(async (req: NextRequest) => {
       const citationsRef = { value: [] as SearchResult[] };
       let searchUsage: TokenUsage | null = null;
       let directAnswered = false;
+
+      // ---- OCR 警告 ----
+      if (ocrWarning) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ warning: ocrWarning })}\n\n`));
+      }
 
       // ---- 联网搜索阶段 ----
       if (searchMode !== "off") {

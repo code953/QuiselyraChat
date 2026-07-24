@@ -1,10 +1,14 @@
 import { create, type StoreApi } from "zustand";
+import { toast } from "sonner";
 import { authHeaders } from "@/lib/api-helpers";
+
+export type ChatAttachment = { type: string; url: string; name: string; size: number };
 
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  attachments?: ChatAttachment[] | null;
   status: "success" | "error" | "cancelled" | "streaming";
   createdAt: Date;
   modelId?: string | null;
@@ -20,6 +24,7 @@ type StreamEvent = {
   usage?: ChatMessage["tokenUsage"];
   searchResults?: ChatMessage["searchResults"];
   status?: string;
+  warning?: string;
   done?: boolean;
   error?: string;
 };
@@ -54,7 +59,7 @@ interface ChatState {
   selectedModelId: string | null;
 
   fetchMessages: (conversationId: string) => Promise<void>;
-  sendMessage: (conversationId: string, content: string) => Promise<void>;
+  sendMessage: (conversationId: string, content: string, attachments?: ChatAttachment[]) => Promise<void>;
   retryGeneration: (conversationId: string, assistantMessageId: string) => Promise<void>;
   stopGeneration: () => void;
   clearMessages: () => void;
@@ -69,7 +74,8 @@ async function streamAssistantMessage(
   get: GetState,
   conversationId: string,
   content: string,
-  assistantMessage: ChatMessage
+  assistantMessage: ChatMessage,
+  attachments?: ChatAttachment[],
 ) {
   const abortController = new AbortController();
   set({ isStreaming: true, abortController });
@@ -82,6 +88,7 @@ async function streamAssistantMessage(
       body: JSON.stringify({
         conversationId,
         content,
+        ...(attachments?.length ? { attachments } : {}),
         ...(selectedModelId ? { modelId: selectedModelId } : {}),
       }),
       signal: abortController.signal,
@@ -146,6 +153,11 @@ async function streamAssistantMessage(
                 : message
             ),
           }));
+          continue;
+        }
+
+        if (data.warning) {
+          toast.warning(data.warning);
           continue;
         }
 
@@ -223,6 +235,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             createdAt: new Date(message.createdAt as string | number),
             modelId: (message.modelId as string) || null,
             tokenUsage: (message.tokenUsage as ChatMessage["tokenUsage"]) || null,
+            attachments: (message.attachments as ChatMessage["attachments"]) || null,
           })),
         });
       } else {
@@ -233,13 +246,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (conversationId: string, content: string) => {
+  sendMessage: async (conversationId: string, content: string, attachments?: ChatAttachment[]) => {
     if (get().isStreaming) return;
 
     const userMessage: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: "user",
       content,
+      attachments: attachments?.length ? attachments : null,
       status: "success",
       createdAt: new Date(),
     };
@@ -256,7 +270,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [...state.messages, userMessage, assistantMessage],
     }));
 
-    await streamAssistantMessage(set, get, conversationId, content, assistantMessage);
+    await streamAssistantMessage(set, get, conversationId, content, assistantMessage, attachments);
   },
 
   retryGeneration: async (conversationId: string, assistantMessageId: string) => {

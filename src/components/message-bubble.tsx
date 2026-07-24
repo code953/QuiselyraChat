@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { SearchCitations } from "@/components/search-citations";
-import { Bot, User, Loader2, Copy, Check, RotateCcw, AlertCircle, Globe } from "lucide-react";
+import { Bot, User, Loader2, Copy, Check, RotateCcw, AlertCircle, Globe, FileText } from "lucide-react";
 import { useModelStore } from "@/stores/model";
 import { useChatStore, type ChatMessage } from "@/stores/chat";
 import { cn } from "@/lib/utils";
@@ -59,7 +59,33 @@ export function MessageBubble({ message, conversationId }: MessageBubbleProps) {
           )}
         >
           {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            <>
+              {message.attachments && message.attachments.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {message.attachments.map((att, i) =>
+                    att.type === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={i}
+                        src={att.url}
+                        alt={att.name}
+                        className="max-h-48 rounded object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 rounded bg-background/20 px-2 py-0.5 text-xs"
+                      >
+                        <FileText className="h-3 w-3" />
+                        {att.name}
+                      </span>
+                    )
+                  )}
+                </div>
+              )}
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            </>
           ) : (
             <>
               {message.searching && !message.content && (

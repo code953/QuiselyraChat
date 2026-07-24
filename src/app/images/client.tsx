@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
 import { useImageStore } from "@/stores/image";
@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { ArrowLeft, Loader2, Sparkles, Download, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Download, Trash2, ImagePlus, X } from "lucide-react";
 
 const IMAGE_KEYWORDS = ["dall", "image", "flux", "sd", "stable", "cogview", "jimeng", "seedream", "kolors", "wanx", "imagen"];
 
@@ -28,6 +28,11 @@ function ImagesLayout() {
   const [modelId, setModelId] = useState<string>("");
   const [size, setSize] = useState("1024x1024");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // 参考图
+  const [referenceImage, setReferenceImage] = useState<File | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const refInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchImages();
@@ -46,9 +51,23 @@ function ImagesLayout() {
   // 未显式选择时默认第一个（渲染期派生，避免 effect 内 setState）
   const effectiveModelId = modelId || imageModels[0]?.id || "";
 
+  const handleRefSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setReferenceImage(file);
+    setReferencePreview(URL.createObjectURL(file));
+  };
+
+  const clearReference = () => {
+    if (referencePreview) URL.revokeObjectURL(referencePreview);
+    setReferenceImage(null);
+    setReferencePreview(null);
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim() || !effectiveModelId) return;
-    await generateImage(prompt.trim(), effectiveModelId, size);
+    await generateImage(prompt.trim(), effectiveModelId, size, referenceImage);
   };
 
   const handleDownload = (url: string, id: string) => {
@@ -79,6 +98,40 @@ function ImagesLayout() {
                 placeholder="描述你想生成的图片…"
                 className="min-h-24 resize-none"
               />
+
+              {/* 参考图片 */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">参考图片（可选，用于图生图）</label>
+                <div className="flex items-center gap-2">
+                  {referencePreview ? (
+                    <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={referencePreview} alt="参考图" className="h-16 w-16 rounded object-cover" />
+                      <button
+                        type="button"
+                        onClick={clearReference}
+                        className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground/80 text-background hover:bg-foreground"
+                        aria-label="移除参考图"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => refInputRef.current?.click()}>
+                      <ImagePlus className="mr-1.5 h-4 w-4" />
+                      上传参考图
+                    </Button>
+                  )}
+                  <input
+                    ref={refInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={handleRefSelect}
+                  />
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-48 flex-1 space-y-1.5">
                   <label className="text-xs text-muted-foreground">模型</label>

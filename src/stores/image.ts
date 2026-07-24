@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-import { authHeaders } from "@/lib/api-helpers";
+import { authHeaders, authHeadersRaw } from "@/lib/api-helpers";
 
 export interface GeneratedImage {
   id: string;
@@ -19,7 +19,7 @@ interface ImageState {
   loading: boolean;
   generating: boolean;
   fetchImages: () => Promise<void>;
-  generateImage: (prompt: string, modelId: string, size: string) => Promise<GeneratedImage | null>;
+  generateImage: (prompt: string, modelId: string, size: string, referenceImage?: File | null) => Promise<GeneratedImage | null>;
   deleteImage: (id: string) => Promise<void>;
 }
 
@@ -38,14 +38,30 @@ export const useImageStore = create<ImageState>((set) => ({
     }
   },
 
-  generateImage: async (prompt, modelId, size) => {
+  generateImage: async (prompt, modelId, size, referenceImage) => {
     set({ generating: true });
     try {
-      const res = await fetch("/api/images", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ prompt, modelId, size }),
-      });
+      let res: Response;
+      if (referenceImage) {
+        // 图生图：使用 FormData
+        const formData = new FormData();
+        formData.append("prompt", prompt);
+        formData.append("modelId", modelId);
+        formData.append("size", size);
+        formData.append("referenceImage", referenceImage);
+        res = await fetch("/api/images", {
+          method: "POST",
+          headers: authHeadersRaw(),
+          body: formData,
+        });
+      } else {
+        // 纯文生图：使用 JSON
+        res = await fetch("/api/images", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ prompt, modelId, size }),
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(data?.message || "生成失败");

@@ -34,3 +34,31 @@ export function authHeaders(): Record<string, string> {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
+
+/**
+ * 只含 Authorization 头，不设 Content-Type（FormData 上传需要浏览器自动设置 boundary）。
+ */
+export function authHeadersRaw(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export type UploadResult = { url: string; name: string; size: number; type: "image" | "text" };
+
+/**
+ * 上传单个文件到 /api/upload，返回文件元数据。
+ */
+export async function uploadFile(file: File): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    headers: authHeadersRaw(),
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message || "上传失败");
+  }
+  return res.json();
+}

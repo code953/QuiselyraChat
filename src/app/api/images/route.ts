@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { createLLMClient } from "@/lib/llm-client";
 import { saveUpload } from "@/lib/storage";
 import { apiBadRequest, apiServerError } from "@/lib/api-helpers";
+import { toFile } from "openai";
 
 function toServeUrl(filePath: string): string {
   return `/api/uploads/${filePath}`;
@@ -22,11 +23,34 @@ export const GET = withAuth(async () => {
   }
 });
 
-// POST /api/images —— 文生图
+// POST /api/images —— 文生图 / 图生图
 export const POST = withAuth(async (req: NextRequest) => {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { prompt, modelId, size } = body as { prompt?: string; modelId?: string; size?: string };
+    const contentType = req.headers.get("content-type") || "";
+    let prompt: string | undefined;
+    let modelId: string | undefined;
+    let size: string | undefined;
+    let referenceImageBuffer: Buffer | null = null;
+    let referenceImageName: string | null = null;
+
+    if (contentType.includes("multipart/form-data")) {
+      // FormData 模式（带参考图）
+      const formData = await req.formData();
+      prompt = formData.get("prompt") as string | undefined;
+      modelId = formData.get("modelId") as string | undefined;
+      size = formData.get("size") as string | undefined;
+      const refFile = formData.get("referenceImage");
+      if (refFile && refFile instanceof Blob) {
+        referenceImageBuffer = Buffer.from(await refFile.arrayBuffer());
+        referenceImageName = refFile instanceof File ? refFile.name : "reference.png";
+      }
+    } else {
+      // JSON 模式（纯文生图）
+      const body = await req.json().catch(() => ({}));
+      prompt = body.prompt;
+      modelId = body.modelId;
+      size = body.size;
+    }
 
     if (!prompt || !modelId) {
       return apiBadRequest("prompt and modelId are required");
@@ -42,27 +66,74 @@ export const POST = withAuth(async (req: NextRequest) => {
 
     let bytes: Buffer;
     try {
-      const res = await client.images.generate({
-        model: model.modelId,
-        prompt,
-        size: imageSize as "1024x1024",
-        n: 1,
-        response_format: "b64_json",
-      });
+      if (referenceImageBuffer) {
+        // 图生图：使用 images.edit
+        try {
+          const imageFile = await toFile(referenceImageBuffer, referenceImageName || "reference.png");
+          const res = await client.images.edit({
+            model: model.modelId,
+            image: imageFile,
+            prompt,
+            size: imageSize as "1024x1024",
+            n: 1,
+            response_format: "b64_json",
+          });
 
-      const first = res.data?.[0];
-      if (first?.b64_json) {
-        bytes = Buffer.from(first.b64_json, "base64");
-      } else if (first?.url) {
-        // 某些提供商仅返回 url，服务端拉取字节
-        const imgRes = await fetch(first.url);
-        bytes = Buffer.from(await imgRes.arrayBuffer());
+          const first = res.data?.[0];
+          if (first?.b64_json) {
+            bytes = Buffer.from(first.b64_json, "base64");
+          } else if (first?.url) {
+            const imgRes = await fetch(first.url);
+            bytes = Buffer.from(await imgRes.arrayBuffer());
+          } else {
+            throw new Error("No image data returned");
+          }
+        } catch (editError: unknown) {
+          // 若 images.edit 不支持，降级为 images.generate 并在 prompt 中描述参考图
+          const editMsg = editError instanceof Error ? editError.message : "";
+          if (editMsg.includes("not supported") || editMsg.includes("404") || editMsg.includes("not found")) {
+            const res = await client.images.generate({
+              model: model.modelId,
+              prompt: `Based on the provided reference image style: ${prompt}`,
+              size: imageSize as "1024x1024",
+              n: 1,
+              response_format: "b64_json",
+            });
+            const first = res.data?.[0];
+            if (first?.b64_json) {
+              bytes = Buffer.from(first.b64_json, "base64");
+            } else if (first?.url) {
+              const imgRes = await fetch(first.url);
+              bytes = Buffer.from(await imgRes.arrayBuffer());
+            } else {
+              throw new Error("No image data returned");
+            }
+          } else {
+            throw editError;
+          }
+        }
       } else {
-        throw new Error("No image data returned");
+        // 纯文生图
+        const res = await client.images.generate({
+          model: model.modelId,
+          prompt,
+          size: imageSize as "1024x1024",
+          n: 1,
+          response_format: "b64_json",
+        });
+
+        const first = res.data?.[0];
+        if (first?.b64_json) {
+          bytes = Buffer.from(first.b64_json, "base64");
+        } else if (first?.url) {
+          const imgRes = await fetch(first.url);
+          bytes = Buffer.from(await imgRes.arrayBuffer());
+        } else {
+          throw new Error("No image data returned");
+        }
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "生成失败";
-      // 记录失败行便于排查
       const failId = nanoid();
       await db.insert(images).values({
         id: failId,
@@ -93,7 +164,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       })
       .returning();
 
-    // 计费：图像定价通常按张计，pricing 未细分则记 0
+    // 计费
     await db.insert(usageLogs).values({
       id: nanoid(),
       modelId: model.id,
