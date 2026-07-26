@@ -1,6 +1,6 @@
 import { create, type StoreApi } from "zustand";
 import { toast } from "sonner";
-import { authHeaders } from "@/lib/api-helpers";
+import { authHeaders, handleAuthFailure } from "@/lib/api-helpers";
 
 export type ChatAttachment = { type: string; url: string; name: string; size: number };
 
@@ -28,6 +28,13 @@ type StreamEvent = {
   done?: boolean;
   error?: string;
 };
+
+/** 本地乐观消息的 id 前缀，服务端返回真实 id 后会被替换 */
+let localIdCounter = 0;
+function localId(prefix: string): string {
+  localIdCounter += 1;
+  return `${prefix}-${Date.now().toString(36)}-${localIdCounter}`;
+}
 
 function parseStreamEvents(chunk: string): { events: StreamEvent[]; remaining: string } {
   const events: StreamEvent[] = [];
@@ -80,6 +87,37 @@ async function streamAssistantMessage(
   const abortController = new AbortController();
   set({ isStreaming: true, abortController });
 
+  /** 当前助手消息在本地的 id：收到服务端 messageId 后切换为真实 id */
+  let activeId = assistantMessage.id;
+
+  /**
+   * 只更新目标消息，其余元素保持同一引用——配合 MessageBubble 的记忆化，
+   * 流式期间只有正在生成的那一条会重渲染。
+   */
+  const patchActive = (patch: Partial<ChatMessage>) => {
+    set((state) => {
+      const index = state.messages.findIndex((m) => m.id === activeId);
+      if (index < 0) return state;
+      const next = state.messages.slice();
+      next[index] = { ...next[index], ...patch };
+      return { messages: next };
+    });
+  };
+
+  /** 服务端首次给出真实 messageId 时改写本地 id */
+  const adoptServerId = (serverId: string) => {
+    if (!serverId || serverId === activeId) return;
+    const previousId = activeId;
+    activeId = serverId;
+    set((state) => {
+      const index = state.messages.findIndex((m) => m.id === previousId);
+      if (index < 0) return state;
+      const next = state.messages.slice();
+      next[index] = { ...next[index], id: serverId };
+      return { messages: next };
+    });
+  };
+
   try {
     const { selectedModelId } = get();
     const res = await fetch("/api/chat", {
@@ -95,6 +133,7 @@ async function streamAssistantMessage(
     });
 
     if (!res.ok || !res.body) {
+      if (handleAuthFailure(res.status)) return;
       const data = await res.json().catch(() => null);
       throw new Error(data?.message || "生成失败，请稍后重试");
     }
@@ -102,9 +141,33 @@ async function streamAssistantMessage(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let activeAssistantId = assistantMessage.id;
+    /** 累积的文本增量：一批 chunk 里的多个 content 事件合并为一次 store 更新 */
+    let pendingText = "";
+    let pendingModelId: string | null | undefined;
 
-    while (true) {
+    const flushPendingText = () => {
+      if (!pendingText) return;
+      const delta = pendingText;
+      const modelId = pendingModelId;
+      pendingText = "";
+      pendingModelId = undefined;
+      set((state) => {
+        const index = state.messages.findIndex((m) => m.id === activeId);
+        if (index < 0) return state;
+        const next = state.messages.slice();
+        next[index] = {
+          ...next[index],
+          content: next[index].content + delta,
+          searching: false,
+          ...(modelId ? { modelId } : {}),
+        };
+        return { messages: next };
+      });
+    };
+
+    let finished = false;
+
+    while (!finished) {
       const { done, value } = await reader.read();
       if (done) {
         buffer += decoder.decode();
@@ -121,38 +184,29 @@ async function streamAssistantMessage(
       buffer = parsed.remaining;
 
       for (const data of parsed.events) {
-        const targetId = data.messageId || activeAssistantId;
-        const previousAssistantId = activeAssistantId;
+        if (data.messageId) adoptServerId(data.messageId);
 
-        if (data.messageId) {
-          activeAssistantId = data.messageId;
+        if (data.content) {
+          // 先累积，遇到非内容事件或本批结束时再一次性写入
+          pendingText += data.content;
+          if (data.modelId) pendingModelId = data.modelId;
+          continue;
         }
 
+        flushPendingText();
+
         if (data.error) {
-          set((state) => ({
-            messages: state.messages.map((message) =>
-              message.id === activeAssistantId || message.id === assistantMessage.id
-                ? {
-                    ...message,
-                    id: activeAssistantId,
-                    status: "error" as const,
-                    searching: false,
-                    content: message.content || data.error || "生成失败，请稍后重试",
-                  }
-                : message
-            ),
-          }));
+          patchActive({
+            status: "error",
+            searching: false,
+            content: get().messages.find((m) => m.id === activeId)?.content || data.error,
+          });
+          finished = true;
           break;
         }
 
         if (data.status === "searching") {
-          set((state) => ({
-            messages: state.messages.map((message) =>
-              message.id === previousAssistantId || message.id === activeAssistantId || message.id === assistantMessage.id
-                ? { ...message, searching: true }
-                : message
-            ),
-          }));
+          patchActive({ searching: true });
           continue;
         }
 
@@ -161,56 +215,37 @@ async function streamAssistantMessage(
           continue;
         }
 
-        if (data.content) {
-          set((state) => ({
-            messages: state.messages.map((message) =>
-              message.id === previousAssistantId || message.id === activeAssistantId || message.id === assistantMessage.id
-                ? {
-                    ...message,
-                    id: targetId,
-                    content: message.content + data.content,
-                    searching: false,
-                    modelId: data.modelId || message.modelId,
-                  }
-                : message
-            ),
-          }));
-        }
-
         if (data.done) {
-          set((state) => ({
-            messages: state.messages.map((message) =>
-              message.id === targetId || message.id === assistantMessage.id
-                ? {
-                    ...message,
-                    id: targetId,
-                    status: "success" as const,
-                    searching: false,
-                    tokenUsage: data.usage || null,
-                    searchResults: data.searchResults || null,
-                  }
-                : message
-            ),
-          }));
+          patchActive({
+            status: "success",
+            searching: false,
+            tokenUsage: data.usage || null,
+            searchResults: data.searchResults || null,
+          });
         }
       }
+
+      flushPendingText();
 
       if (done) break;
     }
   } catch (error: unknown) {
     const aborted = error instanceof Error && error.name === "AbortError";
     const errorMessage = error instanceof Error ? error.message : "生成失败，请稍后重试";
-    set((state) => ({
-      messages: state.messages.map((message) =>
-        message.id === assistantMessage.id || message.status === "streaming"
-          ? {
-              ...message,
-              status: aborted ? "cancelled" as const : "error" as const,
-              content: aborted ? message.content : message.content || errorMessage,
-            }
-          : message
-      ),
-    }));
+    set((state) => {
+      const index = state.messages.findIndex((m) => m.id === activeId);
+      if (index < 0) return state;
+      const next = state.messages.slice();
+      const target = next[index];
+      next[index] = {
+        ...target,
+        status: aborted ? "cancelled" : "error",
+        searching: false,
+        content: aborted ? target.content : target.content || errorMessage,
+      };
+      return { messages: next };
+    });
+    if (!aborted) toast.error(errorMessage);
   } finally {
     set({ isStreaming: false, abortController: null });
   }
@@ -239,6 +274,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           })),
         });
       } else {
+        handleAuthFailure(res.status);
         set({ messages: [] });
       }
     } catch {
@@ -250,7 +286,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get().isStreaming) return;
 
     const userMessage: ChatMessage = {
-      id: `temp-${Date.now()}`,
+      id: localId("temp-user"),
       role: "user",
       content,
       attachments: attachments?.length ? attachments : null,
@@ -259,7 +295,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     const assistantMessage: ChatMessage = {
-      id: `temp-assistant-${Date.now()}`,
+      id: localId("temp-assistant"),
       role: "assistant",
       content: "",
       status: "streaming",
@@ -278,10 +314,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const currentMessages = get().messages;
     const assistantIndex = currentMessages.findIndex((message) => message.id === assistantMessageId);
-    const userMessage = currentMessages
-      .slice(0, assistantIndex)
-      .reverse()
-      .find((message) => message.role === "user");
+    const userMessage =
+      assistantIndex < 0
+        ? undefined
+        : currentMessages
+            .slice(0, assistantIndex)
+            .reverse()
+            .find((message) => message.role === "user");
 
     if (assistantIndex < 0 || !userMessage) {
       set((state) => ({
@@ -298,7 +337,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...currentMessages[assistantIndex],
       content: "",
       status: "streaming",
+      searching: false,
       tokenUsage: null,
+      searchResults: null,
       createdAt: new Date(),
     };
 

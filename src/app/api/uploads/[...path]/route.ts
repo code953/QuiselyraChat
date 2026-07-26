@@ -1,46 +1,31 @@
 import { NextRequest } from "next/server";
-import { readFile } from "fs/promises";
+import { stat } from "fs/promises";
+import { createReadStream } from "fs";
+import { Readable } from "stream";
+import { extname } from "path";
 import { resolveUploadPath } from "@/lib/storage";
 
-const CONTENT_TYPES: Record<string, string> = {
-  // 图片
+/**
+ * 仅图片按真实 MIME 返回。其余一律以 text/plain 返回。
+ *
+ * 上传白名单包含 .html / .js / .svg 之外的多种代码文本类型，若按真实 MIME
+ * （如 text/html）在应用同源下返回，上传文件就成了同源脚本执行入口，可读取
+ * localStorage 中的 JWT。统一降级为 text/plain，配合 nosniff 与 CSP sandbox
+ * 消除该路径。
+ */
+const IMAGE_CONTENT_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".gif": "image/gif",
-  // 文本
-  ".txt": "text/plain; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".csv": "text/csv; charset=utf-8",
-  ".py": "text/x-python; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".ts": "text/typescript; charset=utf-8",
-  ".tsx": "text/typescript; charset=utf-8",
-  ".jsx": "text/javascript; charset=utf-8",
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".xml": "application/xml; charset=utf-8",
-  ".yaml": "text/yaml; charset=utf-8",
-  ".yml": "text/yaml; charset=utf-8",
-  ".toml": "text/toml; charset=utf-8",
-  ".sh": "text/x-shellscript; charset=utf-8",
-  ".sql": "text/x-sql; charset=utf-8",
-  ".c": "text/x-c; charset=utf-8",
-  ".cpp": "text/x-c++; charset=utf-8",
-  ".h": "text/x-c; charset=utf-8",
-  ".java": "text/x-java; charset=utf-8",
-  ".go": "text/x-go; charset=utf-8",
-  ".rs": "text/x-rust; charset=utf-8",
-  ".rb": "text/x-ruby; charset=utf-8",
-  ".php": "text/x-php; charset=utf-8",
-  ".log": "text/plain; charset=utf-8",
 };
+
+const TEXT_CONTENT_TYPE = "text/plain; charset=utf-8";
 
 // GET /api/uploads/<file> —— 公开读取（文件名为不可猜测的 nanoid）
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ path: string[] }> }
 ) {
   const { path: segments } = await context.params;
@@ -50,16 +35,38 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
+  const ext = extname(relative).toLowerCase();
+  const imageType = IMAGE_CONTENT_TYPES[ext];
+  const contentType = imageType || TEXT_CONTENT_TYPE;
+
+  const headers = new Headers({
+    "Content-Type": contentType,
+    "Cache-Control": "public, max-age=31536000, immutable",
+    // 禁止浏览器按内容嗅探类型（防止伪装成 .png 的 HTML 被当作页面执行）
+    "X-Content-Type-Options": "nosniff",
+    // 即使被直接导航到，也不允许其中的脚本 / 外部请求生效
+    "Content-Security-Policy": "default-src 'none'; img-src 'self'; sandbox",
+  });
+
   try {
-    const buffer = await readFile(resolved);
-    const ext = relative.slice(relative.lastIndexOf(".")).toLowerCase();
-    const contentType = CONTENT_TYPES[ext] || "application/octet-stream";
-    return new Response(new Uint8Array(buffer), {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=31536000, immutable",
-      },
-    });
+    const info = await stat(resolved);
+    if (!info.isFile()) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    headers.set("Content-Length", String(info.size));
+    headers.set("Last-Modified", info.mtime.toUTCString());
+
+    // 弱 ETag 由 size + mtime 组成，配合协商缓存避免重复传输大图。
+    const etag = `W/"${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`;
+    headers.set("ETag", etag);
+    if (req.headers.get("if-none-match") === etag) {
+      return new Response(null, { status: 304, headers });
+    }
+
+    // 流式返回，避免把整张图片读进内存
+    const stream = Readable.toWeb(createReadStream(resolved)) as ReadableStream<Uint8Array>;
+    return new Response(stream, { headers });
   } catch {
     return new Response("Not found", { status: 404 });
   }

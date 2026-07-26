@@ -1,11 +1,19 @@
 import { create } from "zustand";
+import { TOKEN_STORAGE_KEY } from "@/lib/api-helpers";
+
+export interface LoginResult {
+  ok: boolean;
+  /** 服务端返回的提示（如触发限流时的等待时间），用于替代通用的「密码错误」文案 */
+  message?: string;
+}
 
 interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
-  login: (password: string) => Promise<boolean>;
+  login: (password: string) => Promise<LoginResult>;
   logout: () => void;
-  initAuth: () => void;
+  /** 从 localStorage 恢复 token，返回是否存在本地 token */
+  initAuth: () => boolean;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -13,11 +21,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
 
   initAuth: () => {
-    if (typeof window === "undefined") return;
-    const token = localStorage.getItem("quiselyrachat_token");
+    if (typeof window === "undefined") return false;
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (token) {
       set({ token, isAuthenticated: true });
+      return true;
     }
+    set({ token: null, isAuthenticated: false });
+    return false;
   },
 
   login: async (password: string) => {
@@ -28,19 +39,23 @@ export const useAuthStore = create<AuthState>((set) => ({
         body: JSON.stringify({ password }),
       });
 
-      if (!res.ok) return false;
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        // 限流等情形有明确原因，直接透出给用户，避免误以为是密码错了
+        return { ok: false, message: typeof data?.message === "string" ? data.message : undefined };
+      }
 
       const { token } = await res.json();
-      localStorage.setItem("quiselyrachat_token", token);
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
       set({ token, isAuthenticated: true });
-      return true;
+      return { ok: true };
     } catch {
-      return false;
+      return { ok: false, message: "无法连接服务器，请稍后重试" };
     }
   },
 
   logout: () => {
-    localStorage.removeItem("quiselyrachat_token");
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
     set({ token: null, isAuthenticated: false });
   },
 }));

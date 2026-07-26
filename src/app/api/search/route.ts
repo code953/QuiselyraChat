@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/middleware";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { and, desc, eq, like, or } from "drizzle-orm";
+import { and, desc, eq, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { apiServerError } from "@/lib/api-helpers";
+
+const MAX_QUERY_LENGTH = 200;
+const PER_SOURCE_LIMIT = 50;
+const RESULT_LIMIT = 50;
 
 export interface SearchHit {
   conversationId: string;
@@ -19,6 +23,15 @@ function escapeLike(input: string): string {
   return input.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+/**
+ * 带 ESCAPE 子句的 LIKE。SQLite 的 LIKE 默认没有转义字符，
+ * 若只做反斜杠转义而不声明 ESCAPE，反斜杠会被当成字面字符参与匹配，
+ * 导致含 % / _ 的查询词永远匹配不到。
+ */
+function likeEscaped(column: SQLWrapper, pattern: string): SQL {
+  return sql`${column} LIKE ${pattern} ESCAPE '\\'`;
+}
+
 function buildSnippet(content: string, query: string, radius = 40): string {
   const lower = content.toLowerCase();
   const idx = lower.indexOf(query.toLowerCase());
@@ -28,65 +41,73 @@ function buildSnippet(content: string, query: string, radius = 40): string {
   return `${start > 0 ? "…" : ""}${content.slice(start, end)}${end < content.length ? "…" : ""}`;
 }
 
+function toMillis(value: Date | number | null): number {
+  if (value instanceof Date) return value.getTime();
+  return Number(value ?? 0);
+}
+
 export const GET = withAuth(async (req: NextRequest) => {
   try {
-    const q = (req.nextUrl.searchParams.get("q") || "").trim();
-    if (!q) return NextResponse.json([] as SearchHit[]);
+    const raw = (req.nextUrl.searchParams.get("q") || "").trim();
+    if (!raw) return NextResponse.json([] as SearchHit[]);
 
+    // 限制长度：超长模式串会让 LIKE 全表扫描变得更慢，且没有实际检索意义
+    const q = raw.slice(0, MAX_QUERY_LENGTH);
     const pattern = `%${escapeLike(q)}%`;
 
-    // 命中标题的会话
-    const titleHits = await db
-      .select({
-        conversationId: conversations.id,
-        title: conversations.title,
-        updatedAt: conversations.updatedAt,
-      })
-      .from(conversations)
-      .where(like(conversations.title, pattern))
-      .orderBy(desc(conversations.updatedAt))
-      .limit(50);
+    // 两条查询彼此独立，并行执行
+    const [titleHits, messageHits] = await Promise.all([
+      db
+        .select({
+          conversationId: conversations.id,
+          title: conversations.title,
+          updatedAt: conversations.updatedAt,
+        })
+        .from(conversations)
+        .where(likeEscaped(conversations.title, pattern))
+        .orderBy(desc(conversations.updatedAt))
+        .limit(PER_SOURCE_LIMIT),
 
-    // 命中消息内容
-    const messageHits = await db
-      .select({
-        conversationId: messages.conversationId,
-        title: conversations.title,
-        content: messages.content,
-        role: messages.role,
-        createdAt: messages.createdAt,
-      })
-      .from(messages)
-      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-      .where(and(like(messages.content, pattern), or(eq(messages.role, "user"), eq(messages.role, "assistant"))))
-      .orderBy(desc(messages.createdAt))
-      .limit(50);
+      db
+        .select({
+          conversationId: messages.conversationId,
+          title: conversations.title,
+          content: messages.content,
+          role: messages.role,
+          createdAt: messages.createdAt,
+        })
+        .from(messages)
+        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+        .where(
+          and(
+            likeEscaped(messages.content, pattern),
+            or(eq(messages.role, "user"), eq(messages.role, "assistant"))
+          )
+        )
+        .orderBy(desc(messages.createdAt))
+        .limit(PER_SOURCE_LIMIT),
+    ]);
 
-    const results: SearchHit[] = [];
-
-    for (const t of titleHits) {
-      results.push({
+    const results: SearchHit[] = [
+      ...titleHits.map((t) => ({
         conversationId: t.conversationId,
         title: t.title,
-        matchType: "title",
+        matchType: "title" as const,
         snippet: t.title,
-        createdAt: t.updatedAt instanceof Date ? t.updatedAt.getTime() : Number(t.updatedAt),
-      });
-    }
-
-    for (const m of messageHits) {
-      results.push({
+        createdAt: toMillis(t.updatedAt),
+      })),
+      ...messageHits.map((m) => ({
         conversationId: m.conversationId,
         title: m.title,
-        matchType: "message",
+        matchType: "message" as const,
         snippet: buildSnippet(m.content, q),
         role: m.role,
-        createdAt: m.createdAt instanceof Date ? m.createdAt.getTime() : Number(m.createdAt),
-      });
-    }
+        createdAt: toMillis(m.createdAt),
+      })),
+    ];
 
     results.sort((a, b) => b.createdAt - a.createdAt);
-    return NextResponse.json(results.slice(0, 50));
+    return NextResponse.json(results.slice(0, RESULT_LIMIT));
   } catch {
     return apiServerError();
   }

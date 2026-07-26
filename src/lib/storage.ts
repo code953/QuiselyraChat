@@ -41,6 +41,65 @@ export function validateUploadFile(fileName: string, size: number): { ok: boolea
   return { ok: true };
 }
 
+/**
+ * 按文件头（magic bytes）确认图片的真实类型，返回其扩展名族或 null。
+ *
+ * 仅凭扩展名判断类型意味着任何内容都能被起名为 .png 存进 uploads 并以
+ * image/* 返回；此处对图片做内容校验，拒绝伪装文件。
+ */
+export function sniffImageExtension(data: Buffer): "png" | "jpeg" | "webp" | "gif" | null {
+  if (data.length < 12) return null;
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47 &&
+    data[4] === 0x0d && data[5] === 0x0a && data[6] === 0x1a && data[7] === 0x0a
+  ) {
+    return "png";
+  }
+  // JPEG: FF D8 FF
+  if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "jpeg";
+  // GIF: "GIF87a" / "GIF89a"
+  if (data.subarray(0, 3).toString("latin1") === "GIF") return "gif";
+  // WEBP: "RIFF" .... "WEBP"
+  if (
+    data.subarray(0, 4).toString("latin1") === "RIFF" &&
+    data.subarray(8, 12).toString("latin1") === "WEBP"
+  ) {
+    return "webp";
+  }
+  return null;
+}
+
+const IMAGE_EXTENSION_FAMILY: Record<string, "png" | "jpeg" | "webp" | "gif"> = {
+  ".png": "png",
+  ".jpg": "jpeg",
+  ".jpeg": "jpeg",
+  ".webp": "webp",
+  ".gif": "gif",
+};
+
+/**
+ * 校验图片内容与其扩展名一致。文本类文件无需内容校验（统一以 text/plain 返回）。
+ */
+export function validateUploadContent(
+  fileName: string,
+  data: Buffer
+): { ok: boolean; error?: string } {
+  const ext = path.extname(fileName).toLowerCase();
+  const expected = IMAGE_EXTENSION_FAMILY[ext];
+  if (!expected) return { ok: true };
+
+  const actual = sniffImageExtension(data);
+  if (!actual) {
+    return { ok: false, error: "文件内容不是有效的图片" };
+  }
+  if (actual !== expected) {
+    return { ok: false, error: `文件内容（${actual}）与扩展名（${ext}）不一致` };
+  }
+  return { ok: true };
+}
+
 // ---- 上传文件存储 ----
 
 // 上传文件根目录：./data/uploads（随 Docker ./data 卷持久化）

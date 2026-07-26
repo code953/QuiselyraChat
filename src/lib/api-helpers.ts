@@ -22,9 +22,24 @@ export function stripSensitiveFields<T extends Record<string, unknown>>(obj: T):
   return rest as Omit<T, "apiKeyEncrypted">;
 }
 
+export const TOKEN_STORAGE_KEY = "quiselyrachat_token";
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("quiselyrachat_token");
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+/**
+ * 令牌失效（过期，或因修改访问密码导致版本变更）时清理并回到登录页。
+ * 返回 true 表示已处理，调用方无需再展示错误。
+ */
+export function handleAuthFailure(status: number): boolean {
+  if (status !== 401 || typeof window === "undefined") return false;
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  if (window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
+  return true;
 }
 
 export function authHeaders(): Record<string, string> {

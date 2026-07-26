@@ -9,7 +9,7 @@ import { useModelStore } from "@/stores/model";
 import { ModelSelector } from "@/components/model-selector";
 import { PersonaSelector } from "@/components/persona-selector";
 import { authHeaders, uploadFile } from "@/lib/api-helpers";
-import { Send, Square, Paperclip } from "lucide-react";
+import { Send, Square, Paperclip, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { nanoid } from "nanoid";
@@ -23,6 +23,8 @@ const ALLOWED_TEXT_EXTENSIONS = [
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const MAX_TEXT_SIZE = 1 * 1024 * 1024;
 const MAX_FILES = 5;
+const MAX_TEXTAREA_HEIGHT = 200;
+const ACCEPT_TYPES = [...ALLOWED_IMAGE_EXTENSIONS, ...ALLOWED_TEXT_EXTENSIONS].join(",");
 
 interface PendingFile {
   id: string;
@@ -47,38 +49,55 @@ export function ChatInput() {
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { sendMessage, isStreaming, stopGeneration } = useChatStore();
-  const { currentId, createConversation, updateConversationTitle } = useConversationStore();
+
+  // 细粒度订阅，避免 messages 每次流式更新都重渲染输入区
+  const sendMessage = useChatStore((s) => s.sendMessage);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const stopGeneration = useChatStore((s) => s.stopGeneration);
   const isFirstMessage = useChatStore((s) => s.messages.length === 0);
   const selectedModelId = useChatStore((s) => s.selectedModelId);
-  const models = useModelStore((s) => s.models);
 
-  const selectedModel = selectedModelId ? models.find((m) => m.id === selectedModelId) : null;
-  const hasVision = Boolean(selectedModel?.capabilities?.vision);
+  const currentId = useConversationStore((s) => s.currentId);
+  const createConversation = useConversationStore((s) => s.createConversation);
+  const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
+
+  const hasVision = useModelStore((s) =>
+    Boolean(selectedModelId && s.models.find((m) => m.id === selectedModelId)?.capabilities?.vision)
+  );
+  const hasSelectedModel = useModelStore((s) =>
+    Boolean(selectedModelId && s.models.some((m) => m.id === selectedModelId))
+  );
+
   const hasImageFiles = pendingFiles.some((f) => f.type === "image");
+  const isUploading = pendingFiles.some((f) => f.uploading);
 
-  // 清理 object URLs
+  // 卸载时释放预览用的 object URL。
+  // 用 ref 持有最新列表：若直接依赖 pendingFiles 且依赖数组为空，
+  // 清理函数会闭包到初始的空数组，实际什么都不会释放。
+  const pendingFilesRef = useRef<PendingFile[]>([]);
+  useEffect(() => {
+    pendingFilesRef.current = pendingFiles;
+  }, [pendingFiles]);
   useEffect(() => {
     return () => {
-      pendingFiles.forEach((f) => {
+      pendingFilesRef.current.forEach((f) => {
         if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+      textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
     }
   }, []);
 
   const addFile = useCallback(async (file: File) => {
     const category = getFileCategory(file.name);
     if (!category) {
-      toast.error("不支持的文件类型");
+      toast.error(`不支持的文件类型：${file.name}`);
       return;
     }
     if (category === "image" && file.size > MAX_IMAGE_SIZE) {
@@ -89,43 +108,46 @@ export function ChatInput() {
       toast.error("文本文件不能超过 1MB");
       return;
     }
+    // 在入队前判断数量上限：此前把判断放在 setState 更新函数里，
+    // 被拒绝的文件依然会发起上传，产生无法引用的孤儿文件。
+    if (pendingFilesRef.current.length >= MAX_FILES) {
+      toast.error(`最多附加 ${MAX_FILES} 个文件`);
+      return;
+    }
 
-    setPendingFiles((prev) => {
-      if (prev.length >= MAX_FILES) {
-        toast.error(`最多附加 ${MAX_FILES} 个文件`);
-        return prev;
-      }
-      const id = nanoid(8);
-      const previewUrl = category === "image" ? URL.createObjectURL(file) : undefined;
-      const newFile: PendingFile = { id, file, type: category, previewUrl, uploading: true };
-      return [...prev, newFile];
-    });
+    const id = nanoid(8);
+    const previewUrl = category === "image" ? URL.createObjectURL(file) : undefined;
+    const entry: PendingFile = { id, file, type: category, previewUrl, uploading: true };
+    pendingFilesRef.current = [...pendingFilesRef.current, entry];
+    setPendingFiles((prev) => [...prev, entry]);
 
     // 立即上传
     try {
       const result = await uploadFile(file);
       setPendingFiles((prev) =>
         prev.map((f) =>
-          f.file === file
-            ? { ...f, uploading: false, uploaded: { type: result.type, url: result.url, name: result.name, size: result.size } }
+          f.id === id
+            ? {
+                ...f,
+                uploading: false,
+                uploaded: { type: result.type, url: result.url, name: result.name, size: result.size },
+              }
             : f
         )
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "上传失败";
       toast.error(msg);
-      setPendingFiles((prev) =>
-        prev.map((f) => (f.file === file ? { ...f, uploading: false, error: true } : f))
-      );
+      setPendingFiles((prev) => prev.map((f) => (f.id === id ? { ...f, uploading: false, error: true } : f)));
     }
   }, []);
 
   const removeFile = useCallback((id: string) => {
-    setPendingFiles((prev) => {
-      const file = prev.find((f) => f.id === id);
-      if (file?.previewUrl) URL.revokeObjectURL(file.previewUrl);
-      return prev.filter((f) => f.id !== id);
-    });
+    const removed = pendingFilesRef.current.find((f) => f.id === id);
+    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    // 同步 ref，让紧随其后的 addFile 立即看到正确的数量
+    pendingFilesRef.current = pendingFilesRef.current.filter((f) => f.id !== id);
+    setPendingFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   const handleFileSelect = useCallback(
@@ -178,10 +200,12 @@ export function ChatInput() {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
 
-    // 检查是否有文件还在上传
-    const stillUploading = pendingFiles.some((f) => f.uploading);
-    if (stillUploading) {
+    if (isUploading) {
       toast.warning("文件正在上传中，请稍候");
+      return;
+    }
+    if (!hasSelectedModel) {
+      toast.error("请先选择一个模型");
       return;
     }
 
@@ -199,8 +223,14 @@ export function ChatInput() {
       .filter((f) => f.uploaded && !f.error)
       .map((f) => f.uploaded!);
 
+    // 清空前释放预览 URL，避免这些 blob 一直占用内存
+    pendingFiles.forEach((f) => {
+      if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
+    });
+
     setInput("");
     setPendingFiles([]);
+    pendingFilesRef.current = [];
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     await sendMessage(convId, trimmed, attachments.length > 0 ? attachments : undefined);
@@ -220,29 +250,31 @@ export function ChatInput() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // 输入法组词过程中回车用于选字，不应触发发送
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const acceptTypes = [...ALLOWED_IMAGE_EXTENSIONS, ...ALLOWED_TEXT_EXTENSIONS]
-    .map((ext) => ext)
-    .join(",");
-
   return (
-    <div className="border-t bg-background p-4">
+    <div className="bg-background px-4 pb-4 pt-2">
       {/* Vision 能力警告 */}
-      {hasImageFiles && !hasVision && selectedModel && (
-        <div className="mx-auto mb-2 max-w-3xl rounded-md bg-yellow-50 px-3 py-1.5 text-xs text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-          当前模型未开启识图能力，将使用 OCR 模型识图。建议前往「设置 → 模型」为当前模型勾选识图能力，或前往「设置 → 通用」配置 OCR 模型。
+      {hasImageFiles && !hasVision && hasSelectedModel && (
+        <div className="mx-auto mb-2 flex max-w-3xl items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            当前模型未开启识图能力，将使用 OCR 模型识图。建议前往「设置 → 模型」为当前模型勾选识图能力，
+            或前往「设置 → 通用」配置 OCR 模型。
+          </span>
         </div>
       )}
 
       <div
         className={cn(
-          "mx-auto max-w-3xl rounded-lg border border-input focus-within:ring-1 focus-within:ring-ring",
-          dragOver && "border-primary ring-1 ring-primary"
+          "mx-auto max-w-3xl rounded-2xl border bg-card shadow-sm transition-all",
+          "focus-within:border-ring/60 focus-within:shadow-md",
+          dragOver && "border-primary bg-primary/5 ring-2 ring-primary/30"
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -250,11 +282,12 @@ export function ChatInput() {
       >
         {/* 文件预览条 */}
         {pendingFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-b px-3 py-2">
+          <div className="flex flex-wrap gap-2 border-b px-3 py-2.5">
             {pendingFiles.map((f) => (
               <FilePreview
                 key={f.id}
                 name={f.file.name}
+                size={f.file.size}
                 type={f.type}
                 previewUrl={f.previewUrl}
                 uploading={f.uploading}
@@ -274,12 +307,13 @@ export function ChatInput() {
           }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder="输入消息... (Shift+Enter 换行)"
+          placeholder={dragOver ? "松手即可添加文件…" : "输入消息…（Enter 发送，Shift+Enter 换行）"}
           rows={1}
+          aria-label="消息输入框"
           className={cn(
-            "w-full resize-none bg-transparent px-3 py-2 text-sm",
+            "w-full resize-none bg-transparent px-3.5 pt-3 text-sm leading-6",
             "placeholder:text-muted-foreground focus-visible:outline-none",
-            "min-h-[40px] max-h-[200px]"
+            "min-h-[44px] max-h-[200px]"
           )}
         />
         <div className="flex items-center gap-1 px-2 pb-2">
@@ -287,10 +321,10 @@ export function ChatInput() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={() => fileInputRef.current?.click()}
               aria-label="上传文件"
-              title="上传文件"
+              title="上传图片或文本文件"
             >
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -298,9 +332,10 @@ export function ChatInput() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept={acceptTypes}
+              accept={ACCEPT_TYPES}
               onChange={handleFileSelect}
               className="hidden"
+              tabIndex={-1}
             />
             <ModelSelector />
             <PersonaSelector />
@@ -310,20 +345,22 @@ export function ChatInput() {
               onClick={stopGeneration}
               variant="destructive"
               size="icon"
-              className="h-8 w-8 shrink-0"
+              className="h-8 w-8 shrink-0 rounded-full"
               aria-label="停止生成"
+              title="停止生成"
             >
-              <Square className="h-4 w-4" />
+              <Square className="h-3.5 w-3.5" />
             </Button>
           ) : (
             <Button
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isUploading}
               size="icon"
-              className="h-8 w-8 shrink-0"
+              className="h-8 w-8 shrink-0 rounded-full"
               aria-label="发送"
+              title={isUploading ? "文件上传中…" : "发送消息"}
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-3.5 w-3.5" />
             </Button>
           )}
         </div>

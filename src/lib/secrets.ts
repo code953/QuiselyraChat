@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -27,6 +27,13 @@ export interface RuntimeSecrets {
 }
 
 let secretsPromise: Promise<RuntimeSecrets> | null = null;
+
+/**
+ * 访问密码的令牌版本缓存。密码哈希变化时版本随之变化，
+ * 已签发的 JWT 因版本不匹配而立即失效（见 `src/lib/auth.ts`）。
+ * 缓存在内存中，避免每个请求都为校验版本读一次数据库。
+ */
+let tokenVersionCache: string | null = null;
 
 /**
  * 生成一个随机强密码（约 143 bit 熵，base64url 字符集，无歧义填充符）。
@@ -151,7 +158,7 @@ export async function verifyAccessPassword(password: string): Promise<boolean> {
 }
 
 /**
- * 修改访问密码：写入新密码的 bcrypt 哈希。
+ * 修改访问密码：写入新密码的 bcrypt 哈希，并让所有已签发的 JWT 失效。
  */
 export async function setAccessPassword(newPassword: string): Promise<void> {
   const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
@@ -159,4 +166,25 @@ export async function setAccessPassword(newPassword: string): Promise<void> {
     .insert(settings)
     .values({ key: SETTING_ACCESS_PASSWORD_HASH, value: hash })
     .onConflictDoUpdate({ target: settings.key, set: { value: hash } });
+  // 令旧 token 立即失效：版本由新哈希派生。
+  tokenVersionCache = deriveTokenVersion(hash);
+}
+
+function deriveTokenVersion(passwordHash: string): string {
+  // 只暴露哈希的摘要片段，不把 bcrypt 哈希本身放进 JWT 载荷。
+  return createHash("sha256").update(passwordHash).digest("hex").slice(0, 16);
+}
+
+/**
+ * 当前访问密码对应的令牌版本。签发与校验 JWT 时都会带上，
+ * 因此「修改密码」等价于「登出所有设备」。
+ */
+export async function getTokenVersion(): Promise<string> {
+  if (tokenVersionCache) return tokenVersionCache;
+  await ensureSecrets();
+  const hash = await readSetting(SETTING_ACCESS_PASSWORD_HASH);
+  // 理论上 ensureSecrets 之后哈希必然存在；缺失时用固定占位值，
+  // 保证签发与校验使用同一个版本而不是各自生成随机值。
+  tokenVersionCache = deriveTokenVersion(hash ?? "");
+  return tokenVersionCache;
 }

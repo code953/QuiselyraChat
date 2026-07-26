@@ -39,79 +39,107 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* 界面语言为中文：拉丁字形用 Geist，中文回落到各平台的系统黑体，
+     避免正文里中英文字重/字形不一致。 */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo,
+    Consolas, "Liberation Mono", monospace;
 }
 
 :root {
   --radius: 0.625rem;
+  /* 中性色带极低的冷色度（hue 265），比纯灰更耐看，同时不至于显出颜色倾向 */
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.15 0.008 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.15 0.008 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.15 0.008 265);
+  /* 主色由纯黑改为克制的靛蓝：用户气泡、主按钮、焦点环因此有明确的品牌指向 */
+  --primary: oklch(0.54 0.17 267);
+  --primary-foreground: oklch(0.985 0.002 267);
+  --secondary: oklch(0.968 0.004 265);
+  --secondary-foreground: oklch(0.24 0.012 265);
+  --muted: oklch(0.972 0.004 265);
+  --muted-foreground: oklch(0.53 0.014 265);
+  --accent: oklch(0.958 0.008 265);
+  --accent-foreground: oklch(0.24 0.012 265);
+  --destructive: oklch(0.58 0.22 25);
+  /* 修正：此前与 --destructive 同色，导致 destructive 按钮红底红字无法阅读 */
+  --destructive-foreground: oklch(0.99 0.005 25);
+  --border: oklch(0.918 0.005 265);
+  --input: oklch(0.9 0.006 265);
+  --ring: oklch(0.54 0.17 267);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.714);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.984 0.004 265);
+  --sidebar-foreground: oklch(0.15 0.008 265);
+  --sidebar-primary: oklch(0.54 0.17 267);
+  --sidebar-primary-foreground: oklch(0.985 0.002 267);
+  --sidebar-accent: oklch(0.945 0.01 265);
+  --sidebar-accent-foreground: oklch(0.24 0.012 265);
+  --sidebar-border: oklch(0.918 0.005 265);
+  --sidebar-ring: oklch(0.54 0.17 267);
+
+  /* 代码高亮（浅色）：One Light 系配色。此前浅底上直接套用 One Dark 的
+     亮紫/亮绿，对比度不足，代码几乎读不清。 */
+  --hljs-keyword: #a626a4;
+  --hljs-string: #50a14f;
+  --hljs-title: #4078f2;
+  --hljs-variable: #e45649;
+  --hljs-number: #b76b01;
+  --hljs-comment: #a0a1a7;
+  --hljs-builtin: #0184bc;
+  --hljs-meta: #e45649;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  --background: oklch(0.155 0.01 265);
+  --foreground: oklch(0.975 0.003 265);
+  --card: oklch(0.185 0.011 265);
+  --card-foreground: oklch(0.975 0.003 265);
+  --popover: oklch(0.195 0.012 265);
+  --popover-foreground: oklch(0.975 0.003 265);
+  --primary: oklch(0.68 0.155 267);
+  --primary-foreground: oklch(0.16 0.02 267);
+  --secondary: oklch(0.265 0.013 265);
+  --secondary-foreground: oklch(0.975 0.003 265);
+  --muted: oklch(0.255 0.012 265);
+  --muted-foreground: oklch(0.715 0.014 265);
+  --accent: oklch(0.29 0.016 265);
+  --accent-foreground: oklch(0.975 0.003 265);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.985 0.005 25);
+  --border: oklch(0.278 0.013 265);
+  --input: oklch(0.305 0.014 265);
+  --ring: oklch(0.68 0.155 267);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar: oklch(0.185 0.012 265);
+  --sidebar-foreground: oklch(0.975 0.003 265);
+  --sidebar-primary: oklch(0.68 0.155 267);
+  --sidebar-primary-foreground: oklch(0.16 0.02 267);
+  --sidebar-accent: oklch(0.27 0.016 265);
+  --sidebar-accent-foreground: oklch(0.975 0.003 265);
+  --sidebar-border: oklch(0.265 0.013 265);
+  --sidebar-ring: oklch(0.68 0.155 267);
+
+  /* 代码高亮（深色）：One Dark 系配色 */
+  --hljs-keyword: #c678dd;
+  --hljs-string: #98c379;
+  --hljs-title: #61afef;
+  --hljs-variable: #e06c75;
+  --hljs-number: #d19a66;
+  --hljs-comment: #7f848e;
+  --hljs-builtin: #56b6c2;
+  --hljs-meta: #e06c75;
 }
 
 @layer base {
@@ -120,44 +148,110 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 键盘焦点统一为 2px 环 + 偏移，比原先的 1px 更容易看见 */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 25%, transparent);
+  }
+
+  /* 细滚动条：默认滚动条在窄侧栏里过于抢眼 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+    background-clip: content-box;
+  }
+
+  /* 尊重系统的「减少动态效果」设置 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer components {
+  /* 流式输出时的光标 */
+  .streaming-caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 1em;
+    margin-left: 0.1em;
+    vertical-align: text-bottom;
+    background-color: currentColor;
+    opacity: 0.7;
+    animation: caret-blink 1s steps(2, start) infinite;
+  }
+
+  @keyframes caret-blink {
+    to {
+      visibility: hidden;
+    }
+  }
+
   .hljs-keyword,
   .hljs-selector-tag,
   .hljs-subst {
-    color: #c678dd;
+    color: var(--hljs-keyword);
   }
 
   .hljs-string,
   .hljs-doctag,
   .hljs-regexp {
-    color: #98c379;
+    color: var(--hljs-string);
   }
 
   .hljs-title,
   .hljs-section,
   .hljs-selector-id {
-    color: #61afef;
+    color: var(--hljs-title);
   }
 
   .hljs-variable,
   .hljs-template-variable,
   .hljs-selector-class {
-    color: #e06c75;
+    color: var(--hljs-variable);
   }
 
   .hljs-number,
   .hljs-literal,
   .hljs-type,
   .hljs-params {
-    color: #d19a66;
+    color: var(--hljs-number);
   }
 
   .hljs-comment,
   .hljs-quote {
-    color: #7f848e;
+    color: var(--hljs-comment);
   }
 
   .hljs-built_in,
@@ -166,16 +260,16 @@
   .hljs-symbol,
   .hljs-bullet,
   .hljs-link {
-    color: #56b6c2;
+    color: var(--hljs-builtin);
   }
 
   .hljs-meta,
   .hljs-deletion {
-    color: #e06c75;
+    color: var(--hljs-meta);
   }
 
   .hljs-addition {
-    color: #98c379;
+    color: var(--hljs-string);
   }
 
   .hljs-emphasis {

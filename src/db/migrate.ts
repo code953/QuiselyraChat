@@ -1,5 +1,5 @@
 import { migrate } from "drizzle-orm/libsql/migrator";
-import { db } from "./index";
+import { applyDbPragmas, db } from "./index";
 import { personas } from "./schema";
 import { builtinPersonas } from "./seed";
 import { count, sql } from "drizzle-orm";
@@ -9,6 +9,8 @@ import fs from "node:fs";
 const MIGRATIONS_FOLDER = "./drizzle";
 
 export async function runMigrations() {
+  // 先设置 WAL 等 PRAGMA，后续迁移与运行期查询都在该模式下执行
+  await applyDbPragmas();
   try {
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
   } catch (error: unknown) {
